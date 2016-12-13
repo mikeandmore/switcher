@@ -49,8 +49,10 @@ struct switcher_item {
 };
 
 struct switcher {
+	struct window *win;
 	struct switcher_item *selected;
 	struct switcher_item *items;
+	FILE *provider_process;
 	int nr_items;
 	int w, h;
 };
@@ -69,8 +71,9 @@ cairo_read_from_ptr(void *closure, unsigned char *data, unsigned int length)
 	return CAIRO_STATUS_SUCCESS;
 }
 
-void switcher_read(struct switcher *sw, FILE *pipe)
+void switcher_read(struct switcher *sw)
 {
+	FILE *pipe = sw->provider_process;
 	struct switcher_item **parent = &sw->items;
 	sw->nr_items = 0;
 
@@ -104,7 +107,7 @@ void switcher_read(struct switcher *sw, FILE *pipe)
 	}
 }
 
-void switcher_destroy(struct switcher *sw)
+void switcher_clear(struct switcher *sw)
 {
 	struct switcher_item *next;
 	for (struct switcher_item *item = sw->items;
@@ -112,7 +115,13 @@ void switcher_destroy(struct switcher *sw)
 		next = item->next;
 		free(item);
 	}
-	free(sw);
+	sw->items = NULL;
+}
+
+static void switcher_done(struct switcher *sw)
+{
+	fprintf(sw->provider_process,"%d\n", sw->selected ? sw->selected->id : 0);
+	fflush(sw->provider_process);
 }
 
 static void round_rect(cairo_t *cr, int x, int y, int w, int h, double r)
@@ -205,12 +214,6 @@ static void icon_switcher_next(struct switcher *sw)
 	if (sw->selected == NULL) sw->selected = sw->items;
 }
 
-static void done(struct switcher *sw)
-{
-	printf("%d\n", sw->selected ? sw->selected->id : 0);
-	x11_exit(0);
-}
-
 static void icon_switcher_event_handler(struct window *w, XEvent *event, void *data)
 {
 	struct switcher *sw = data;
@@ -220,25 +223,6 @@ static void icon_switcher_event_handler(struct window *w, XEvent *event, void *d
 		cr = cairo_create(window_surface(w));
 		icon_switcher_paint(sw, cr);
 		cairo_destroy(cr);
-		break;
-	case KeyPress:
-		fprintf(stderr, "Press keycode %d\n", event->xkey.keycode);
-		if (event->xkey.keycode == 23) { // tab
-			icon_switcher_next(sw);
-			XEvent evt;
-			evt.xexpose.window = window_handle(w);
-			evt.type = Expose;
-			XSendEvent(x11_display(), window_handle(w), False,
-				   ExposureMask, &evt);
-		} else if (event->xkey.keycode == 36) {
-			done(sw);
-		}
-		break;
-	case KeyRelease:
-		fprintf(stderr, "Press keycode %d\n", event->xkey.keycode);
-		if (event->xkey.keycode == 64) {
-			done(sw);
-		}
 		break;
 	default:
 		printf("unhandled event %d\n", event->type);
@@ -254,10 +238,46 @@ static void icon_switcher_calculate_size(struct switcher *sw)
 static void icon_switcher_trigger(struct window *w, XEvent *event, void *data)
 {
 	struct switcher *sw = data;
-	fprintf(stderr, "global event type %d\n", event->type);
+	switch (event->type) {
+	case KeyPress:
+		fprintf(stderr, "Press %d\n", event->xkey.keycode);
+		if (event->xkey.keycode == 23) { // tab
+			if (sw->items == NULL) {
+				switcher_read(sw);
+				if (sw->items) {
+					icon_switcher_calculate_size(sw);
+					sw->win = window_new(0, 0, sw->w, sw->h,
+							     ExposureMask,
+							     icon_switcher_event_handler, sw);
+					window_disable_decorator(sw->win);
+					window_show(sw->win);
+					change_window_shape(sw->win, sw->w, sw->h, 16);
+				}
+			} else {
+				icon_switcher_next(sw);
+				XEvent evt;
+				evt.xexpose.window = window_handle(sw->win);
+				evt.type = Expose;
+				XSendEvent(x11_display(), window_handle(sw->win), False,
+					   ExposureMask, &evt);
+			}
+		}
+		break;
+	case KeyRelease:
+		fprintf(stderr, "Release %d\n", event->xkey.keycode);
+		if (event->xkey.keycode == 64) {
+			switcher_done(sw);
+			switcher_clear(sw);
+			window_hide(sw->win);
+			window_destroy(sw->win);
+		}
+		break;
+	}
 }
 
-static switcher *gsw;
+static struct switcher *gsw;
+
+#define CMD "./switch-windows.py"
 
 int main(int argc, char *argv[])
 {
@@ -266,22 +286,13 @@ int main(int argc, char *argv[])
 
 	gsw = malloc(sizeof(struct switcher));
 	memset(gsw, 0, sizeof(struct switcher));
-/*
-	switcher_read(sw);
 
-	// set the default to first
-	sw->selected = sw->items;
+	gsw->provider_process = popen(CMD, "rw");
+	if (!gsw->provider_process) {
+		fprintf(stderr, "Cannot open %s\n", CMD);
+		exit(-1);
+	}
 
-	icon_switcher_calculate_size(sw);
-	struct window *main_w =
-		window_new(0, 0, sw->w, sw->h,
-			   KeyPressMask | KeyReleaseMask | ExposureMask,
-			   icon_switcher_event_handler, sw);
-
-	window_disable_decorator(main_w);
-	// window_show(main_w);
-	// change_window_shape(main_w, sw->w, sw->h, 16);
-	*/
-	x11_event_loop(icon_switcher_trigger, sw);
+	x11_event_loop(icon_switcher_trigger, gsw);
 	return 0;
 }

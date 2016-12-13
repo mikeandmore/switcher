@@ -48,6 +48,11 @@ struct window *window_new(int x, int y, int w, int h, long event_mask, event_han
 	return win;
 }
 
+void window_destroy(struct window *w)
+{
+	XDestroyWindow(dpy, w->da);
+}
+
 #define MWM_HINTS_FUNCTIONS (1L << 0)
 #define MWM_HINTS_DECORATIONS (1L << 1)
 #define MWM_HINTS_INPUT_MODE (1L << 2)

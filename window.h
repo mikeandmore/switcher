@@ -8,6 +8,7 @@ typedef void (*event_handler)(struct window *, XEvent *, void *data);
 
 struct window *window_new(int x, int y, int w, int h,
 			  long event_mask, event_handler evth, void *data);
+void window_destroy(struct window *w);
 
 void window_disable_decorator(struct window *w);
 void window_show(struct window *w);

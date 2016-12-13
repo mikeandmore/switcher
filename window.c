@@ -98,7 +98,7 @@ void window_hide(struct window *w)
 	XUnmapWindow(dpy, w->da);
 }
 
-void x11_event_loop()
+void x11_event_loop(event_handler root_handler, void *data)
 {
 	while (1) {
 		XEvent e;
@@ -106,6 +106,8 @@ void x11_event_loop()
 		XNextEvent(dpy, &e);
 		Window target = e.xany.window;
 
+		if (target == DefaultRootWindow(dpy))
+			root_handler(NULL, &e, data);
 		for (struct window *w = all_windows; w != NULL; w = w->next) {
 			if (w->da != target) continue;
 			if (w->handle_event)
@@ -121,6 +123,20 @@ void x11_init()
 		fputs("Cannot open display", stderr);
 		exit(-1);
 	}
+}
+
+void x11_exit(int status)
+{
+	XCloseDisplay(dpy);
+	exit(status);
+}
+
+void x11_bind_key(int keycode, unsigned int modifiers)
+{
+	Window root = DefaultRootWindow(dpy);
+	XGrabKey(dpy, keycode, modifiers, root,
+		 False, GrabModeAsync, GrabModeAsync);
+	XSelectInput(dpy, root, KeyPressMask | KeyReleaseMask);
 }
 
 Display *x11_display()

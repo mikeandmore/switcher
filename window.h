@@ -15,8 +15,10 @@ void window_hide(struct window *w);
 Window window_handle(struct window *w);
 cairo_surface_t *window_surface(struct window *w);
 
-void x11_event_loop();
+void x11_event_loop(event_handler root_handler, void *data);
+void x11_bind_key(int keycode, unsigned int modifiers);
 void x11_init();
+void x11_exit();
 Display *x11_display();
 
 #endif /* WINDOW_H */

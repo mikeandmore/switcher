@@ -69,18 +69,18 @@ cairo_read_from_ptr(void *closure, unsigned char *data, unsigned int length)
 	return CAIRO_STATUS_SUCCESS;
 }
 
-void switcher_read(struct switcher *sw)
+void switcher_read(struct switcher *sw, FILE *pipe)
 {
 	struct switcher_item **parent = &sw->items;
 	sw->nr_items = 0;
 
 	while (1) {
 		int id, name_len, pixbuf_len;
-		while (fread(&id, sizeof(int), 1, stdin) == 0);
+		if (fread(&id, sizeof(int), 1, pipe) == 0) abort();
 
 		if (id == 0) break;
-		while (fread(&name_len, sizeof(int), 1, stdin) == 0);
-		while (fread(&pixbuf_len, sizeof(int), 1, stdin) == 0);
+		if (fread(&name_len, sizeof(int), 1, pipe) == 0) abort();
+		if (fread(&pixbuf_len, sizeof(int), 1, pipe) == 0) abort();
 		struct switcher_item *item =
 			malloc(sizeof(struct switcher_item) + name_len + 1 + pixbuf_len);
 		item->next = NULL;
@@ -89,9 +89,9 @@ void switcher_read(struct switcher *sw)
 		item->pixbuf_len = pixbuf_len;
 		item->name = ((char *) item) + sizeof(struct switcher_item);
 		item->pixbuf = item->name + name_len + 1;
-		while (fread(item->name, name_len, 1, stdin) == 0);
+		if (fread(item->name, name_len, 1, pipe) == 0) abort();
 		item->name[name_len] = 0;
-		while (fread(item->pixbuf, pixbuf_len, 1, stdin) == 0);
+		if (fread(item->pixbuf, pixbuf_len, 1, pipe) == 0) abort();
 
 		*parent = item;
 		parent = &(item->next);
@@ -102,6 +102,17 @@ void switcher_read(struct switcher *sw)
 				cairo_read_from_ptr, &closure);
 		sw->nr_items++;
 	}
+}
+
+void switcher_destroy(struct switcher *sw)
+{
+	struct switcher_item *next;
+	for (struct switcher_item *item = sw->items;
+	     item != NULL; item = next) {
+		next = item->next;
+		free(item);
+	}
+	free(sw);
 }
 
 static void round_rect(cairo_t *cr, int x, int y, int w, int h, double r)
@@ -194,6 +205,12 @@ static void icon_switcher_next(struct switcher *sw)
 	if (sw->selected == NULL) sw->selected = sw->items;
 }
 
+static void done(struct switcher *sw)
+{
+	printf("%d\n", sw->selected ? sw->selected->id : 0);
+	x11_exit(0);
+}
+
 static void icon_switcher_event_handler(struct window *w, XEvent *event, void *data)
 {
 	struct switcher *sw = data;
@@ -213,6 +230,14 @@ static void icon_switcher_event_handler(struct window *w, XEvent *event, void *d
 			evt.type = Expose;
 			XSendEvent(x11_display(), window_handle(w), False,
 				   ExposureMask, &evt);
+		} else if (event->xkey.keycode == 36) {
+			done(sw);
+		}
+		break;
+	case KeyRelease:
+		fprintf(stderr, "Press keycode %d\n", event->xkey.keycode);
+		if (event->xkey.keycode == 64) {
+			done(sw);
 		}
 		break;
 	default:
@@ -226,12 +251,22 @@ static void icon_switcher_calculate_size(struct switcher *sw)
 	sw->w = sw->nr_items * ITEM_SIZE + (sw->nr_items - 2) * SPC + 2 * X_MARGIN;
 }
 
+static void icon_switcher_trigger(struct window *w, XEvent *event, void *data)
+{
+	struct switcher *sw = data;
+	fprintf(stderr, "global event type %d\n", event->type);
+}
+
+static switcher *gsw;
+
 int main(int argc, char *argv[])
 {
 	x11_init();
+	x11_bind_key(23, 8); // Alt Tab
 
-	struct switcher *sw = malloc(sizeof(struct switcher));
-	memset(sw, 0, sizeof(struct switcher));
+	gsw = malloc(sizeof(struct switcher));
+	memset(gsw, 0, sizeof(struct switcher));
+/*
 	switcher_read(sw);
 
 	// set the default to first
@@ -244,8 +279,9 @@ int main(int argc, char *argv[])
 			   icon_switcher_event_handler, sw);
 
 	window_disable_decorator(main_w);
-	window_show(main_w);
-	change_window_shape(main_w, sw->w, sw->h, 16);
-	x11_event_loop();
+	// window_show(main_w);
+	// change_window_shape(main_w, sw->w, sw->h, 16);
+	*/
+	x11_event_loop(icon_switcher_trigger, sw);
 	return 0;
 }

@@ -254,6 +254,23 @@ static void icon_switcher_next(struct switcher *sw)
 	if (sw->auto_default && sw->selected == NULL) sw->selected = sw->items;
 }
 
+static void icon_switcher_calculate_size(struct switcher *sw)
+{
+	sw->h = ITEM_SIZE + 2 * (Y_MARGIN + TEXT_Y_MARGIN) + 12;
+	sw->w = sw->nr_items * ITEM_SIZE + (sw->nr_items - 2) * SPC + 2 * X_MARGIN;
+}
+
+static void icon_switcher_done(struct switcher *sw)
+{
+	if (sw->items == NULL)
+		return;
+
+	switcher_done(sw);
+	switcher_clear(sw);
+	window_hide(sw->win);
+	window_destroy(sw->win);
+}
+
 static void icon_switcher_event_handler(struct window *w, XEvent *event, void *data)
 {
 	struct switcher *sw = data;
@@ -264,15 +281,36 @@ static void icon_switcher_event_handler(struct window *w, XEvent *event, void *d
 		icon_switcher_paint(sw, cr);
 		cairo_destroy(cr);
 		break;
+	case KeyRelease:
+		if (event->xkey.keycode == 64) {
+			icon_switcher_done(sw);
+		}
 	default:
 		printf("unhandled event %d\n", event->type);
 	}
 }
 
-static void icon_switcher_calculate_size(struct switcher *sw)
+static void icon_switcher_switch_or_show(struct switcher *sw)
 {
-	sw->h = ITEM_SIZE + 2 * (Y_MARGIN + TEXT_Y_MARGIN) + 12;
-	sw->w = sw->nr_items * ITEM_SIZE + (sw->nr_items - 2) * SPC + 2 * X_MARGIN;
+	if (sw->items == NULL) {
+		switcher_read(sw);
+		if (sw->items) {
+			icon_switcher_calculate_size(sw);
+			sw->win = window_new(0, 0, sw->w, sw->h,
+					     ExposureMask | KeyReleaseMask,
+					     icon_switcher_event_handler, sw);
+			window_disable_decorator(sw->win);
+			window_show(sw->win);
+			change_window_shape(sw->win, sw->w, sw->h, 16);
+		}
+	} else {
+		icon_switcher_next(sw);
+		XEvent evt;
+		evt.xexpose.window = window_handle(sw->win);
+		evt.type = Expose;
+		XSendEvent(x11_display(), window_handle(sw->win), False,
+			   ExposureMask, &evt);
+	}
 }
 
 static void icon_switcher_trigger(struct window *w, XEvent *event, void *data)
@@ -282,36 +320,13 @@ static void icon_switcher_trigger(struct window *w, XEvent *event, void *data)
 	case KeyPress:
 		fprintf(stderr, "Press %d\n", event->xkey.keycode);
 		if (event->xkey.keycode == 23) { // tab
-			if (sw->items == NULL) {
-				switcher_read(sw);
-				if (sw->items) {
-					icon_switcher_calculate_size(sw);
-					sw->win = window_new(0, 0, sw->w, sw->h,
-							     ExposureMask,
-							     icon_switcher_event_handler, sw);
-					window_disable_decorator(sw->win);
-					window_show(sw->win);
-					change_window_shape(sw->win, sw->w, sw->h, 16);
-				}
-			} else {
-				icon_switcher_next(sw);
-				XEvent evt;
-				evt.xexpose.window = window_handle(sw->win);
-				evt.type = Expose;
-				XSendEvent(x11_display(), window_handle(sw->win), False,
-					   ExposureMask, &evt);
-			}
+			icon_switcher_switch_or_show(sw);
 		}
 		break;
 	case KeyRelease:
 		fprintf(stderr, "Release %d\n", event->xkey.keycode);
 		if (event->xkey.keycode == 64) {
-			if (sw->items == NULL) break;
-
-			switcher_done(sw);
-			switcher_clear(sw);
-			window_hide(sw->win);
-			window_destroy(sw->win);
+			icon_switcher_done(sw);
 		}
 		break;
 	}
@@ -328,7 +343,7 @@ int main(int argc, char *argv[])
 {
 	x11_init();
 	x11_bind_key(23, 8); // Alt Tab
-	x11_bind_key(64, AnyModifier);
+	x11_bind_key(64, 8);
 
 	if (argc < 2) {
 		show_usage();

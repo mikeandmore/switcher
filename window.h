@@ -13,6 +13,7 @@ void window_destroy(struct window *w);
 void window_disable_decorator(struct window *w);
 void window_show(struct window *w);
 void window_hide(struct window *w);
+void window_move(struct window *w, int x, int y);
 Window window_handle(struct window *w);
 cairo_surface_t *window_surface(struct window *w);
 

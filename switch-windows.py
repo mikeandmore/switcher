@@ -18,12 +18,18 @@ class WindowSwitcher(object):
         self.windows = []
 
     def list_windows(self):
-        self.screen.force_update();
+        self.screen.force_update()
         self.windows = sorted(filter(lambda w: w.get_class_instance_name() and not w.get_class_instance_name().startswith('FvwmButtons'), self.screen.get_windows()), key=lambda w: w.get_sort_order())
 
-        if len(self.windows) > 2:
-            t = self.windows[0]
-            self.windows[0] = self.windows[1]
+        current = None
+        for i in range(len(self.windows)):
+            if self.windows[i].is_active():
+                current = i
+                break
+
+        if len(self.windows) > 2 and current is not None:
+            t = self.windows[current]
+            self.windows[current] = self.windows[1]
             self.windows[1] = t
     
         i = 0
@@ -34,6 +40,7 @@ class WindowSwitcher(object):
             icon = w.get_icon()
             # sys.stderr.write('%s\n' % (w.get_class_instance_name()))
             # sys.stderr.write('%s\n' % (w.is_active()))
+            sys.stderr.write('%s order %d\n' % (w.get_name(), w.get_sort_order()))
             buf = icon.save_to_bufferv('png', [], [])
 
             sys.stdout.write(struct.pack('i', len(name)))

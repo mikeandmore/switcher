@@ -103,6 +103,11 @@ void window_hide(struct window *w)
 	XUnmapWindow(dpy, w->da);
 }
 
+void window_move(struct window *w, int x, int y)
+{
+	XMoveWindow(dpy, w->da, x, y);
+}
+
 void x11_event_loop(event_handler root_handler, void *data)
 {
 	while (1) {

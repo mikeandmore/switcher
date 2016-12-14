@@ -5,6 +5,8 @@
 #include <math.h>
 
 #include <X11/extensions/shape.h>
+#include <X11/extensions/Xrandr.h>
+
 #include "window.h"
 
 #include <cairo/cairo.h>
@@ -56,7 +58,7 @@ struct switcher {
 	FILE *provider_process_stdin;
 	FILE *provider_process_stdout;
 	int nr_items;
-	int w, h;
+	int x, y, w, h;
 	int auto_default;
 };
 
@@ -258,6 +260,28 @@ static void icon_switcher_calculate_size(struct switcher *sw)
 {
 	sw->h = ITEM_SIZE + 2 * (Y_MARGIN + TEXT_Y_MARGIN) + 12;
 	sw->w = sw->nr_items * ITEM_SIZE + (sw->nr_items - 2) * SPC + 2 * X_MARGIN;
+	Display *dpy = x11_display();
+	// Window  root = DefaultRootWindow(dpy);
+	Window focus, fchild;
+	int revert_to = 0;
+	int fx, fy;
+	XGetInputFocus(dpy, &focus, &revert_to);
+	XTranslateCoordinates(dpy, focus, DefaultRootWindow(dpy), 0, 0, &fx, &fy, &fchild);
+
+	XRRScreenResources *res = XRRGetScreenResources(dpy, focus);
+	int done = 0;
+	for (int i = 0; !done && i < res->ncrtc; i++) {
+		XRRCrtcInfo *info = XRRGetCrtcInfo(dpy, res, res->crtcs[i]);
+		fprintf(stderr, "crtc %dx%d %d,%d\n", info->width, info->height, info->x, info->y);
+		if (fx >= info->x && fx < info->x + info->width
+		    && fy >= info->y && fy < info->y + info->height) {
+			sw->x = info->x + (info->width - sw->w) / 2;
+			sw->y = info->y + (info->height - sw->h) / 2;
+			done = 1;
+		}
+		XRRFreeCrtcInfo(info);
+	}
+	XRRFreeScreenResources(res);
 }
 
 static void icon_switcher_done(struct switcher *sw)
@@ -296,11 +320,12 @@ static void icon_switcher_switch_or_show(struct switcher *sw)
 		switcher_read(sw);
 		if (sw->items) {
 			icon_switcher_calculate_size(sw);
-			sw->win = window_new(0, 0, sw->w, sw->h,
+			sw->win = window_new(sw->x, sw->y, sw->w, sw->h,
 					     ExposureMask | KeyReleaseMask,
 					     icon_switcher_event_handler, sw);
 			window_disable_decorator(sw->win);
 			window_show(sw->win);
+			window_move(sw->win, sw->x, sw->y);
 			change_window_shape(sw->win, sw->w, sw->h, 16);
 		}
 	} else {

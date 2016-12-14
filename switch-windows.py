@@ -19,9 +19,9 @@ class WindowSwitcher(object):
 
     def list_windows(self):
         self.screen.force_update();
-        self.windows = sorted(filter(lambda w: w.get_class_instance_name() and not w.get_class_instance_name().startswith('FvwmButtons'), screen.get_windows()), key=lambda w: w.get_sort_order())
+        self.windows = sorted(filter(lambda w: w.get_class_instance_name() and not w.get_class_instance_name().startswith('FvwmButtons'), self.screen.get_windows()), key=lambda w: w.get_sort_order())
 
-        if len(windows) > 2:
+        if len(self.windows) > 2:
             t = self.windows[0]
             self.windows[0] = self.windows[1]
             self.windows[1] = t
@@ -43,8 +43,9 @@ class WindowSwitcher(object):
         sys.stdout.write(struct.pack('i', 0))
         sys.stdout.flush()
 
-    def select_windows(self):
-        sel = int(sys.stdin.readline())
+    def select_windows(self, channel):
+        sel = int(channel.readline())
+        sys.stderr.write('selecting %d' % (sel - 1,))
         if sel != 0:
             w = self.windows[sel - 1]
             self.windows.remove(w)
@@ -55,12 +56,14 @@ class WindowSwitcher(object):
 
 def dispatch_io(channel, condition, sw):
     line = channel.readline()
+    sys.stderr.write(line)
     if line == 'list\n':
         sw.list_windows()
     elif line == 'select\n':
-        sw.select_windows()
+        sw.select_windows(channel)
     else:
         sys.stderr.write('Unknown command: %s' % line)
+    return True
         
 if __name__ == '__main__':
     Gtk.init()

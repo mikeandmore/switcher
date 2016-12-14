@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <math.h>
 
 #include <X11/extensions/shape.h>
@@ -52,10 +53,39 @@ struct switcher {
 	struct window *win;
 	struct switcher_item *selected;
 	struct switcher_item *items;
-	FILE *provider_process;
+	FILE *provider_process_stdin;
+	FILE *provider_process_stdout;
 	int nr_items;
 	int w, h;
+	int auto_default;
 };
+
+void switcher_run_provider(struct switcher *sw, const char *path, char *const argv[])
+{
+	int in_pipe[2], out_pipe[2];
+	if (pipe(in_pipe) < 0 || pipe(out_pipe) < 0) {
+		abort();
+	}
+
+	pid_t provider_pid = fork();
+	if (provider_pid < 0) {
+		fprintf(stderr, "Cannot run provider %s\n", path);
+		abort();
+	}
+
+	if (provider_pid == 0) {
+		close(0);
+		close(1);
+		if (dup2(in_pipe[0], 0) < 0 || dup2(out_pipe[1], 1) < 0) {
+			fprintf(stderr, "Cannot dup fd\n");
+			exit(-1);
+		}
+		execv(path, argv);
+	} else {
+		sw->provider_process_stdin = fdopen(in_pipe[1], "w");
+		sw->provider_process_stdout = fdopen(out_pipe[0], "r");
+	}
+}
 
 struct read_closure {
 	unsigned char *ptr;
@@ -73,7 +103,10 @@ cairo_read_from_ptr(void *closure, unsigned char *data, unsigned int length)
 
 void switcher_read(struct switcher *sw)
 {
-	FILE *pipe = sw->provider_process;
+	fprintf(sw->provider_process_stdin, "list\n");
+	fflush(sw->provider_process_stdin);
+
+	FILE *pipe = sw->provider_process_stdout;
 	struct switcher_item **parent = &sw->items;
 	sw->nr_items = 0;
 
@@ -105,6 +138,9 @@ void switcher_read(struct switcher *sw)
 				cairo_read_from_ptr, &closure);
 		sw->nr_items++;
 	}
+
+	if (sw->auto_default)
+		sw->selected = sw->items;
 }
 
 void switcher_clear(struct switcher *sw)
@@ -116,12 +152,15 @@ void switcher_clear(struct switcher *sw)
 		free(item);
 	}
 	sw->items = NULL;
+	sw->nr_items = 0;
 }
 
 static void switcher_done(struct switcher *sw)
 {
-	fprintf(sw->provider_process,"%d\n", sw->selected ? sw->selected->id : 0);
-	fflush(sw->provider_process);
+	if (sw->selected) {
+		fprintf(sw->provider_process_stdin,"select\n%d\n", sw->selected->id);
+		fflush(sw->provider_process_stdin);
+	}
 }
 
 static void round_rect(cairo_t *cr, int x, int y, int w, int h, double r)
@@ -138,8 +177,8 @@ static void round_rect(cairo_t *cr, int x, int y, int w, int h, double r)
 #define X_MARGIN 24
 #define Y_MARGIN 10
 #define SPC 8
-#define ITEM_SIZE 65
-#define ITEM_PADDING 1
+#define ITEM_SIZE 66
+#define ITEM_PADDING 2
 #define TEXT_Y_MARGIN 4
 
 #define X_OFFSET (X_MARGIN - SPC)
@@ -210,8 +249,9 @@ static void icon_switcher_paint(struct switcher *sw, cairo_t *cr)
 
 static void icon_switcher_next(struct switcher *sw)
 {
-	sw->selected = sw->selected->next;
 	if (sw->selected == NULL) sw->selected = sw->items;
+	else sw->selected = sw->selected->next;
+	if (sw->auto_default && sw->selected == NULL) sw->selected = sw->items;
 }
 
 static void icon_switcher_event_handler(struct window *w, XEvent *event, void *data)
@@ -266,6 +306,8 @@ static void icon_switcher_trigger(struct window *w, XEvent *event, void *data)
 	case KeyRelease:
 		fprintf(stderr, "Release %d\n", event->xkey.keycode);
 		if (event->xkey.keycode == 64) {
+			if (sw->items == NULL) break;
+
 			switcher_done(sw);
 			switcher_clear(sw);
 			window_hide(sw->win);
@@ -277,21 +319,31 @@ static void icon_switcher_trigger(struct window *w, XEvent *event, void *data)
 
 static struct switcher *gsw;
 
-#define CMD "./switch-windows.py"
+static void show_usage()
+{
+	exit(-1);
+}
 
 int main(int argc, char *argv[])
 {
 	x11_init();
 	x11_bind_key(23, 8); // Alt Tab
+	x11_bind_key(64, AnyModifier);
+
+	if (argc < 2) {
+		show_usage();
+	}
+
+	char *pipe_argv[argc];
+	memcpy(pipe_argv, argv + 1, sizeof(char *) * (argc - 1));
+	pipe_argv[argc - 1] = NULL;
 
 	gsw = malloc(sizeof(struct switcher));
 	memset(gsw, 0, sizeof(struct switcher));
 
-	gsw->provider_process = popen(CMD, "rw");
-	if (!gsw->provider_process) {
-		fprintf(stderr, "Cannot open %s\n", CMD);
-		exit(-1);
-	}
+	gsw->auto_default = 1;
+
+	switcher_run_provider(gsw, argv[1], pipe_argv);
 
 	x11_event_loop(icon_switcher_trigger, gsw);
 	return 0;

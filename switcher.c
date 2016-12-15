@@ -60,6 +60,7 @@ struct switcher {
 	int nr_items;
 	int x, y, w, h;
 	int auto_default;
+	int shaped;
 };
 
 void switcher_run_provider(struct switcher *sw, const char *path, char *const argv[])
@@ -189,8 +190,9 @@ static void round_rect(cairo_t *cr, int x, int y, int w, int h, double r)
 
 static void icon_switcher_paint(struct switcher *sw, cairo_t *cr)
 {
+	round_rect(cr, BORDER_LEN / 2, BORDER_LEN / 2, sw->w - BORDER_LEN, sw->h - BORDER_LEN , 16 - BORDER_LEN / 2);
 	cairo_set_source_rgb(cr, 1., 1., 1.);
-	cairo_paint(cr);
+	cairo_stroke(cr);
 
 	cairo_pattern_t *pattern =
 		cairo_pattern_create_linear(0, 0, 0, sw->h - 2 * BORDER_LEN);
@@ -298,12 +300,26 @@ static void icon_switcher_done(struct switcher *sw)
 static void icon_switcher_event_handler(struct window *w, XEvent *event, void *data)
 {
 	struct switcher *sw = data;
+	int fx, fy;
 	cairo_t *cr;
 	switch (event->type) {
 	case Expose:
+
+		window_get_position(w, &fx, &fy);
+		if (fx != sw->x || fy != sw->y) {
+			window_queue_expose(w);
+			break;
+		}
+
+		if (!sw->shaped) {
+			change_window_shape(sw->win, sw->w, sw->h, 16);
+			sw->shaped = 1;
+		}
+
 		cr = cairo_create(window_surface(w));
 		icon_switcher_paint(sw, cr);
 		cairo_destroy(cr);
+
 		break;
 	case KeyRelease:
 		if (event->xkey.keycode == 64) {
@@ -323,18 +339,14 @@ static void icon_switcher_switch_or_show(struct switcher *sw)
 			sw->win = window_new(sw->x, sw->y, sw->w, sw->h,
 					     ExposureMask | KeyReleaseMask,
 					     icon_switcher_event_handler, sw);
+			sw->shaped = 0;
 			window_disable_decorator(sw->win);
 			window_show(sw->win);
 			window_move(sw->win, sw->x, sw->y);
-			change_window_shape(sw->win, sw->w, sw->h, 16);
 		}
 	} else {
 		icon_switcher_next(sw);
-		XEvent evt;
-		evt.xexpose.window = window_handle(sw->win);
-		evt.type = Expose;
-		XSendEvent(x11_display(), window_handle(sw->win), False,
-			   ExposureMask, &evt);
+		window_queue_expose(sw->win);
 	}
 }
 

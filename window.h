@@ -8,12 +8,17 @@ typedef void (*event_handler)(struct window *, XEvent *, void *data);
 
 struct window *window_new(int x, int y, int w, int h,
 			  long event_mask, event_handler evth, void *data);
+void window_set_event_mask(struct window *w, long event_mask);
+void window_queue_expose(struct window *w);
+
 void window_destroy(struct window *w);
 
 void window_disable_decorator(struct window *w);
 void window_show(struct window *w);
 void window_hide(struct window *w);
 void window_move(struct window *w, int x, int y);
+void window_get_position(struct window *w, int *x, int *y);
+
 Window window_handle(struct window *w);
 cairo_surface_t *window_surface(struct window *w);
 

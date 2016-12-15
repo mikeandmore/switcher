@@ -6,6 +6,7 @@
 #include <X11/Xatom.h>
 #include <X11/Xutil.h>
 #include <cairo/cairo-xlib.h>
+#include <cairo/cairo-xlib-xrender.h>
 
 static Display *dpy;
 
@@ -32,8 +33,10 @@ cairo_surface_t *window_surface(struct window *w)
 struct window *window_new(int x, int y, int w, int h, long event_mask, event_handler evth, void *data)
 {
 	struct window *win = malloc(sizeof(struct window));
-	Window da = XCreateSimpleWindow(dpy, DefaultRootWindow(dpy),
-					x, y, w, h, 0, 0, 0);
+	// Window da = XCreateSimpleWindow(dpy, DefaultRootWindow(dpy),
+	//				x, y, w, h, 0, 0, 0);
+	Window da = XCreateWindow(dpy, DefaultRootWindow(dpy), x, y, w, h, 0, CopyFromParent,
+					InputOutput, CopyFromParent, 0, NULL);
 	XSelectInput(dpy, da, event_mask);
 	win->da = da;
 	win->next = all_windows;
@@ -45,7 +48,23 @@ struct window *window_new(int x, int y, int w, int h, long event_mask, event_han
 			dpy, win->da,
 			DefaultVisual(dpy, DefaultScreen(dpy)),
 			w, h);
+	if (cairo_xlib_surface_get_xrender_format(win->surface) == NULL) {
+		fprintf(stderr, "XRender is not available!\n");
+	}
 	return win;
+}
+
+void window_set_event_mask(struct window *w, long event_mask)
+{
+	XSelectInput(dpy, w->da, event_mask);
+}
+
+void window_queue_expose(struct window *w)
+{
+	XEvent evt;
+	evt.xexpose.window = w->da;
+	evt.type = Expose;
+	XSendEvent(dpy, w->da, False, ExposureMask, &evt);
 }
 
 void window_destroy(struct window *w)
@@ -106,6 +125,12 @@ void window_hide(struct window *w)
 void window_move(struct window *w, int x, int y)
 {
 	XMoveWindow(dpy, w->da, x, y);
+}
+
+void window_get_position(struct window *w, int *x, int *y)
+{
+	Window fchild;
+	XTranslateCoordinates(dpy, w->da, DefaultRootWindow(dpy), 0, 0, x, y, &fchild);
 }
 
 void x11_event_loop(event_handler root_handler, void *data)

@@ -60,7 +60,6 @@ struct switcher {
 	int nr_items;
 	int x, y, w, h;
 	int auto_default;
-	int shaped;
 };
 
 void switcher_run_provider(struct switcher *sw, const char *path, char *const argv[])
@@ -290,11 +289,11 @@ static void icon_switcher_done(struct switcher *sw)
 {
 	if (sw->items == NULL)
 		return;
-
-	switcher_done(sw);
-	switcher_clear(sw);
 	window_hide(sw->win);
 	window_destroy(sw->win);
+	usleep(50000);
+	switcher_done(sw);
+	switcher_clear(sw);
 }
 
 static void icon_switcher_event_handler(struct window *w, XEvent *event, void *data)
@@ -302,49 +301,43 @@ static void icon_switcher_event_handler(struct window *w, XEvent *event, void *d
 	struct switcher *sw = data;
 	int fx, fy;
 	cairo_t *cr;
-	// cairo_surface_t *buffer;
 	switch (event->type) {
 	case Expose:
-
-		window_get_position(w, &fx, &fy);
-		if (fx != sw->x || fy != sw->y) {
-			window_queue_expose(w);
-			break;
-		}
-
-		if (!sw->shaped) {
-			change_window_shape(sw->win, sw->w, sw->h, 16);
-			sw->shaped = 1;
-		}
-
-		// I can do double buffering here to avoid flickering...
-		// But then this doesn't have hardware acceleration
 		cr = cairo_create(window_surface(sw->win));
 		icon_switcher_paint(sw, cr);
+		window_submit_buffer(w, sw->w, sw->h);
 		cairo_destroy(cr);
+		break;
+	case NoExpose:
 		break;
 	case KeyRelease:
 		if (event->xkey.keycode == 64) {
 			icon_switcher_done(sw);
 		}
+		break;
 	default:
 		printf("unhandled event %d\n", event->type);
 	}
 }
 
-static void icon_switcher_switch_or_show(struct switcher *sw)
+static void icon_switcher_switch_or_show(struct switcher *sw, unsigned int timestamp)
 {
 	if (sw->items == NULL) {
 		switcher_read(sw);
 		if (sw->items) {
 			icon_switcher_calculate_size(sw);
 			sw->win = window_new(sw->x, sw->y, sw->w, sw->h,
+					     1,
 					     ExposureMask | KeyReleaseMask,
 					     icon_switcher_event_handler, sw);
-			sw->shaped = 0;
+			change_window_shape(sw->win, sw->w, sw->h, 16);
 			window_disable_decorator(sw->win);
+			window_set_sticky(sw->win);
+			window_set_skip_pager(sw->win);
+			window_set_skip_taskbar(sw->win);
+			window_set_timestamp(sw->win, timestamp);
 			window_show(sw->win);
-			window_move(sw->win, sw->x, sw->y);
+			// window_move(sw->win, sw->x, sw->y);
 		}
 	} else {
 		icon_switcher_next(sw);
@@ -359,7 +352,7 @@ static void icon_switcher_trigger(struct window *w, XEvent *event, void *data)
 	case KeyPress:
 		fprintf(stderr, "Press %d\n", event->xkey.keycode);
 		if (event->xkey.keycode == 23) { // tab
-			icon_switcher_switch_or_show(sw);
+			icon_switcher_switch_or_show(sw, event->xkey.time);
 		}
 		break;
 	case KeyRelease:

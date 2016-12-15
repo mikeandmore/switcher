@@ -27,7 +27,7 @@ class WindowSwitcher(object):
                 current = i
                 break
 
-        if len(self.windows) > 2 and current is not None:
+        if len(self.windows) > 1 and current is not None:
             t = self.windows[current]
             self.windows[current] = self.windows[1]
             self.windows[1] = t

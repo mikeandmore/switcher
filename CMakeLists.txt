@@ -4,6 +4,9 @@ project(switcher)
 
 set(CMAKE_C_STANDARD 99)
 
+set(CMAKE_C_FLAGS_RELEASE "-Ofast -g -flto -fno-omit-frame-pointer -DNDEBUG")
+set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-flto -fwhole-program -g -fno-omit-frame-pointer")
+
 find_package(PkgConfig)
 find_library(X11_LIBRARIES X11)
 find_library(XEXT_LIBRARIES Xext)

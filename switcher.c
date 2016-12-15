@@ -302,6 +302,7 @@ static void icon_switcher_event_handler(struct window *w, XEvent *event, void *d
 	struct switcher *sw = data;
 	int fx, fy;
 	cairo_t *cr;
+	// cairo_surface_t *buffer;
 	switch (event->type) {
 	case Expose:
 
@@ -316,10 +317,11 @@ static void icon_switcher_event_handler(struct window *w, XEvent *event, void *d
 			sw->shaped = 1;
 		}
 
-		cr = cairo_create(window_surface(w));
+		// I can do double buffering here to avoid flickering...
+		// But then this doesn't have hardware acceleration
+		cr = cairo_create(window_surface(sw->win));
 		icon_switcher_paint(sw, cr);
 		cairo_destroy(cr);
-
 		break;
 	case KeyRelease:
 		if (event->xkey.keycode == 64) {

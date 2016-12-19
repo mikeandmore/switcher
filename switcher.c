@@ -60,6 +60,9 @@ struct switcher {
 	int nr_items;
 	int x, y, w, h;
 	int auto_default;
+
+	int trigger_key_code, release_key_code;
+	int modifier_mask;
 };
 
 void switcher_run_provider(struct switcher *sw, const char *path, char *const argv[])
@@ -165,6 +168,32 @@ static void switcher_done(struct switcher *sw)
 	}
 }
 
+static void switcher_calculate_position(struct switcher *sw)
+{
+	Display *dpy = x11_display();
+	// Window  root = DefaultRootWindow(dpy);
+	Window focus, fchild;
+	int revert_to = 0;
+	int fx, fy;
+	XGetInputFocus(dpy, &focus, &revert_to);
+	XTranslateCoordinates(dpy, focus, DefaultRootWindow(dpy), 0, 0, &fx, &fy, &fchild);
+
+	XRRScreenResources *res = XRRGetScreenResources(dpy, focus);
+	int done = 0;
+	for (int i = 0; !done && i < res->ncrtc; i++) {
+		XRRCrtcInfo *info = XRRGetCrtcInfo(dpy, res, res->crtcs[i]);
+		fprintf(stderr, "crtc %dx%d %d,%d\n", info->width, info->height, info->x, info->y);
+		if (fx >= info->x && fx < info->x + info->width
+		    && fy >= info->y && fy < info->y + info->height) {
+			sw->x = info->x + (info->width - sw->w) / 2;
+			sw->y = info->y + (info->height - sw->h) / 2;
+			done = 1;
+		}
+		XRRFreeCrtcInfo(info);
+	}
+	XRRFreeScreenResources(res);
+}
+
 static void round_rect(cairo_t *cr, int x, int y, int w, int h, double r)
 {
 	cairo_new_sub_path(cr);
@@ -174,6 +203,8 @@ static void round_rect(cairo_t *cr, int x, int y, int w, int h, double r)
 	cairo_arc(cr, x + r, y + h - r, r, 0.5 * M_PI, M_PI);
 	cairo_close_path(cr);
 }
+
+// icon switcher
 
 #define BORDER_LEN 2
 #define X_MARGIN 24
@@ -261,28 +292,7 @@ static void icon_switcher_calculate_size(struct switcher *sw)
 {
 	sw->h = ITEM_SIZE + 2 * (Y_MARGIN + TEXT_Y_MARGIN) + 12;
 	sw->w = sw->nr_items * ITEM_SIZE + (sw->nr_items - 2) * SPC + 2 * X_MARGIN;
-	Display *dpy = x11_display();
-	// Window  root = DefaultRootWindow(dpy);
-	Window focus, fchild;
-	int revert_to = 0;
-	int fx, fy;
-	XGetInputFocus(dpy, &focus, &revert_to);
-	XTranslateCoordinates(dpy, focus, DefaultRootWindow(dpy), 0, 0, &fx, &fy, &fchild);
-
-	XRRScreenResources *res = XRRGetScreenResources(dpy, focus);
-	int done = 0;
-	for (int i = 0; !done && i < res->ncrtc; i++) {
-		XRRCrtcInfo *info = XRRGetCrtcInfo(dpy, res, res->crtcs[i]);
-		fprintf(stderr, "crtc %dx%d %d,%d\n", info->width, info->height, info->x, info->y);
-		if (fx >= info->x && fx < info->x + info->width
-		    && fy >= info->y && fy < info->y + info->height) {
-			sw->x = info->x + (info->width - sw->w) / 2;
-			sw->y = info->y + (info->height - sw->h) / 2;
-			done = 1;
-		}
-		XRRFreeCrtcInfo(info);
-	}
-	XRRFreeScreenResources(res);
+	switcher_calculate_position(sw);
 }
 
 static void icon_switcher_done(struct switcher *sw)
@@ -303,6 +313,9 @@ static void icon_switcher_event_handler(struct window *w, XEvent *event, void *d
 	cairo_t *cr;
 	switch (event->type) {
 	case Expose:
+		if (sw->items == NULL)
+			break;
+
 		cr = cairo_create(window_surface(sw->win));
 		icon_switcher_paint(sw, cr);
 		window_submit_buffer(w, sw->w, sw->h);
@@ -312,6 +325,7 @@ static void icon_switcher_event_handler(struct window *w, XEvent *event, void *d
 		break;
 	case KeyRelease:
 		if (event->xkey.keycode == 64) {
+			fprintf(stderr, "destroy\n");
 			icon_switcher_done(sw);
 		}
 		break;
@@ -373,24 +387,48 @@ static void show_usage()
 
 int main(int argc, char *argv[])
 {
+	gsw = malloc(sizeof(struct switcher));
+	memset(gsw, 0, sizeof(struct switcher));
+
+	gsw->auto_default = 1;
+	gsw->trigger_key_code = 23; // Tab
+	gsw->release_key_code = 64; // Alt
+	gsw->modifier_mask = 8; // Alt
+
+	int opt;
+	int key_code;
+	while ((opt = getopt(argc, argv, "t:r:m:"))) {
+		switch (opt) {
+		case 't':
+			key_code = atoi(optarg);
+			if (key_code != 0) gsw->trigger_key_code = key_code;
+			break;
+		case 'r':
+			key_code = atoi(optarg);
+			if (key_code != 0) gsw->release_key_code = key_code;
+			break;
+		case 'm':
+			key_code = atoi(optarg);
+			if (key_code != 0) gsw->modifier_mask = key_code;
+			break;
+		default:
+			goto start;
+		}
+	}
+start:
 	x11_init();
-	x11_bind_key(23, 8); // Alt Tab
-	x11_bind_key(64, 8);
+	x11_bind_key(gsw->trigger_key_code, gsw->modifier_mask);
+	x11_bind_key(gsw->release_key_code, gsw->modifier_mask);
 
 	if (argc < 2) {
 		show_usage();
 	}
 
 	char *pipe_argv[argc];
-	memcpy(pipe_argv, argv + 1, sizeof(char *) * (argc - 1));
+	memcpy(pipe_argv, argv + optind, sizeof(char *) * (argc - optind));
 	pipe_argv[argc - 1] = NULL;
 
-	gsw = malloc(sizeof(struct switcher));
-	memset(gsw, 0, sizeof(struct switcher));
-
-	gsw->auto_default = 1;
-
-	switcher_run_provider(gsw, argv[1], pipe_argv);
+	switcher_run_provider(gsw, pipe_argv[0], pipe_argv);
 
 	x11_event_loop(icon_switcher_trigger, gsw);
 	return 0;

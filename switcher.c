@@ -269,14 +269,25 @@ static void icon_switcher_paint(struct switcher *sw, cairo_t *cr)
 		// draw the image
 		double img_w = cairo_image_surface_get_width(item->image_surface);
 		double img_h = cairo_image_surface_get_height(item->image_surface);
+
 		cairo_translate(cr,
 				X_OFFSET + pos * (SPC + ITEM_SIZE) + ITEM_PADDING,
 				Y_MARGIN + ITEM_PADDING);
+
 		cairo_scale(cr,
 			    1. * (ITEM_SIZE - 2 * ITEM_PADDING) / img_w,
 			    1. * (ITEM_SIZE - 2 * ITEM_PADDING) / img_h);
 		cairo_set_source_surface(cr, item->image_surface, 0, 0);
-		cairo_paint(cr);
+
+		cairo_set_line_width(cr, 0);
+		// WTF cairo?
+		// scaling image in cairo will add a black border?
+		cairo_rectangle(cr,
+				img_w / (ITEM_SIZE - 2 * ITEM_PADDING),
+				img_h / (ITEM_SIZE - 2 * ITEM_PADDING),
+				img_w - 2 * img_w / (ITEM_SIZE - 2 * ITEM_PADDING),
+				img_h - 2 * img_h / (ITEM_SIZE - 2 * ITEM_PADDING));
+		cairo_fill(cr);
 		cairo_identity_matrix(cr);
 	}
 }
@@ -324,6 +335,7 @@ static void icon_switcher_event_handler(struct window *w, XEvent *event, void *d
 	case NoExpose:
 		break;
 	case KeyRelease:
+		fprintf(stderr, "Release %d\n", event->xkey.keycode);
 		if (event->xkey.keycode == 64) {
 			fprintf(stderr, "destroy\n");
 			icon_switcher_done(sw);
@@ -352,6 +364,7 @@ static void icon_switcher_switch_or_show(struct switcher *sw, unsigned int times
 			window_set_timestamp(sw->win, timestamp);
 			window_show(sw->win);
 			// window_move(sw->win, sw->x, sw->y);
+			XFlush(x11_display());
 		}
 	} else {
 		icon_switcher_next(sw);
@@ -364,18 +377,19 @@ static void icon_switcher_trigger(struct window *w, XEvent *event, void *data)
 	struct switcher *sw = data;
 	switch (event->type) {
 	case KeyPress:
-		fprintf(stderr, "Press %d\n", event->xkey.keycode);
+		// fprintf(stderr, "Press %d\n", event->xkey.keycode);
 		if (event->xkey.keycode == 23) { // tab
 			icon_switcher_switch_or_show(sw, event->xkey.time);
 		}
 		break;
 	case KeyRelease:
-		fprintf(stderr, "Release %d\n", event->xkey.keycode);
+		fprintf(stderr, "Global Release %d\n", event->xkey.keycode);
 		if (event->xkey.keycode == 64) {
 			icon_switcher_done(sw);
 		}
 		break;
 	}
+
 }
 
 static struct switcher *gsw;

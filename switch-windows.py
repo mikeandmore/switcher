@@ -5,6 +5,7 @@ import struct
 import ctypes
 import subprocess
 import os
+import time
 
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, Wnck, Gdk, GdkX11, GLib

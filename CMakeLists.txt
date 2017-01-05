@@ -12,9 +12,10 @@ find_library(X11_LIBRARIES X11)
 find_library(XEXT_LIBRARIES Xext)
 find_library(XRANDR_LIBRARIES Xrandr)
 pkg_check_modules(CAIRO REQUIRED cairo)
-pkg_check_modules(PANGOCAIRO REQUIRED pangocairo)
+pkg_check_modules(PANGO REQUIRED pangocairo)
 
+link_directories(${CAIRO_LIBRARY_DIRS} ${PANGO_LIBRARY_DIRS})
 add_executable(switcher switcher.c window.c)
-target_include_directories(switcher PUBLIC ${CAIRO_INCLUDE_DIRS} ${PANGOCAIRO_INCLUDE_DIRS})
-target_link_libraries(switcher ${X11_LIBRARIES} ${XEXT_LIBRARIES} ${CAIRO_LIBRARIES} ${PANGOCAIRO_LIBRARIES} ${XRANDR_LIBRARIES})
+target_include_directories(switcher PUBLIC ${CAIRO_INCLUDE_DIRS} ${PANGO_INCLUDE_DIRS})
+target_link_libraries(switcher PUBLIC ${X11_LIBRARIES} ${XEXT_LIBRARIES} ${CAIRO_LIBRARIES} ${PANGO_LIBRARIES} ${XRANDR_LIBRARIES})
 

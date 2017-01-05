@@ -9,7 +9,7 @@
 
 #include "window.h"
 
-#include <cairo/cairo.h>
+#include <cairo.h>
 #include <pango/pangocairo.h>
 
 static void change_window_shape(struct window *win, int w, int h, int r)
@@ -211,7 +211,7 @@ static void round_rect(cairo_t *cr, int x, int y, int w, int h, double r)
 #define Y_MARGIN 10
 #define SPC 8
 #define ITEM_SIZE 66
-#define ITEM_PADDING 2
+#define ITEM_PADDING 1
 #define TEXT_Y_MARGIN 4
 
 #define X_OFFSET (X_MARGIN - SPC)
@@ -275,19 +275,13 @@ static void icon_switcher_paint(struct switcher *sw, cairo_t *cr)
 				Y_MARGIN + ITEM_PADDING);
 
 		cairo_scale(cr,
-			    1. * (ITEM_SIZE - 2 * ITEM_PADDING) / img_w,
-			    1. * (ITEM_SIZE - 2 * ITEM_PADDING) / img_h);
+			    (ITEM_SIZE - 2 * ITEM_PADDING) / img_w,
+			    (ITEM_SIZE - 2 * ITEM_PADDING) / img_h);
+
 		cairo_set_source_surface(cr, item->image_surface, 0, 0);
 
 		cairo_set_line_width(cr, 0);
-		// WTF cairo?
-		// scaling image in cairo will add a black border?
-		cairo_rectangle(cr,
-				img_w / (ITEM_SIZE - 2 * ITEM_PADDING),
-				img_h / (ITEM_SIZE - 2 * ITEM_PADDING),
-				img_w - 2 * img_w / (ITEM_SIZE - 2 * ITEM_PADDING),
-				img_h - 2 * img_h / (ITEM_SIZE - 2 * ITEM_PADDING));
-		cairo_fill(cr);
+		cairo_paint(cr);
 		cairo_identity_matrix(cr);
 	}
 }

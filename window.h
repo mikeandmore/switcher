@@ -1,7 +1,7 @@
 #ifndef WINDOW_H
 #define WINDOW_H
 #include <X11/Xlib.h>
-#include <cairo/cairo.h>
+#include <cairo.h>
 
 struct window;
 typedef void (*event_handler)(struct window *, XEvent *, void *data);

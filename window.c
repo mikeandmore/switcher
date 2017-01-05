@@ -5,8 +5,8 @@
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 #include <X11/Xutil.h>
-#include <cairo/cairo-xlib.h>
-#include <cairo/cairo-xlib-xrender.h>
+#include <cairo-xlib.h>
+#include <cairo-xlib-xrender.h>
 
 static Display *dpy;
 

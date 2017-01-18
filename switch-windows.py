@@ -24,6 +24,9 @@ class WindowSwitcher(object):
         self.windows = []
         self.spec = AppSpecs()
         self.spec.build_wmclass_index()
+        self.window_id_map = {}
+        self.id_window_map = {}
+        self.free_id = set([])
         self.listing = False
 
     def refresh_windows(self):
@@ -39,6 +42,26 @@ class WindowSwitcher(object):
                 self.windows.remove(w)
                 self.windows.insert(0, w)
 
+        # assigning IDs
+        window_set = set(self.windows)
+        for w, i in self.window_id_map.items():
+            if w in window_set:
+                continue
+            del self.window_id_map[w]
+            del self.id_window_map[i]
+            self.free_id.add(i)
+
+        for w in self.windows:
+            if w in self.window_id_map:
+                continue
+
+            i = len(self.window_id_map) + 1
+            if len(self.free_id) > 0:
+                i = self.free_id.pop()
+
+            self.window_id_map[w] = i
+            self.id_window_map[i] = w
+
     def flush_windows(self):
         if self.listing:
             return
@@ -50,7 +73,6 @@ class WindowSwitcher(object):
         if self.listing:
             return
 
-        sys.stderr.write('passive update\n')
         self.refresh_windows()
         self.flush_windows()
 
@@ -62,15 +84,12 @@ class WindowSwitcher(object):
             self.windows[0] = self.windows[1]
             self.windows[1] = t
 
-        i = 0
         for w in self.windows:
-            i += 1
-            sys.stdout.write(struct.pack('i', i))
             name = w.get_name()
             icon = w.get_icon()
             # sys.stderr.write('%s\n' % (w.get_class_instance_name()))
             # sys.stderr.write('%s\n' % (w.is_active()))
-            sys.stderr.write('%s order %d\n' % (w.get_name(), w.get_sort_order()))
+            sys.stderr.write('%s id %d\n' % (w.get_name(), self.window_id_map[w]))
             # buf = icon.save_to_bufferv('png', [], [])[1]
             buf = None
             e = self.spec.find_by_wmclass(w.get_class_instance_name())
@@ -78,6 +97,7 @@ class WindowSwitcher(object):
                 buf = file(e.icon_path).read()
             else:
                 buf = icon.save_to_bufferv('png', [], [])[1]
+            sys.stdout.write(struct.pack('i', self.window_id_map[w]))
             sys.stdout.write(struct.pack('i', len(name)))
             sys.stdout.write(struct.pack('i', len(buf)))
             sys.stdout.write(name)
@@ -93,7 +113,7 @@ class WindowSwitcher(object):
         if sel == 0:
             return
 
-        w = self.windows[sel - 1]
+        w = self.id_window_map[sel]
         w.activate(0)
         self.listing = False
         return

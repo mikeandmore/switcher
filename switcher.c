@@ -65,6 +65,16 @@ struct switcher {
 	int modifier_mask;
 };
 
+static pid_t provider_pid;
+
+static void kill_provider(int sig)
+{
+	fprintf(stderr, "exiting...\n");
+	kill(provider_pid, SIGTERM);
+	kill(provider_pid, SIGKILL);
+	exit(0);
+}
+
 void switcher_run_provider(struct switcher *sw, const char *path, char *const argv[])
 {
 	int in_pipe[2], out_pipe[2];
@@ -72,7 +82,7 @@ void switcher_run_provider(struct switcher *sw, const char *path, char *const ar
 		abort();
 	}
 
-	pid_t provider_pid = fork();
+	provider_pid = fork();
 	if (provider_pid < 0) {
 		fprintf(stderr, "Cannot run provider %s\n", path);
 		abort();
@@ -87,6 +97,7 @@ void switcher_run_provider(struct switcher *sw, const char *path, char *const ar
 		}
 		execv(path, argv);
 	} else {
+		signal(SIGINT, kill_provider);
 		sw->provider_process_stdin = fdopen(in_pipe[1], "w");
 		sw->provider_process_stdout = fdopen(out_pipe[0], "r");
 	}
@@ -304,10 +315,10 @@ static void icon_switcher_done(struct switcher *sw)
 {
 	if (sw->items == NULL)
 		return;
+	switcher_done(sw);
+	usleep(50000);
 	window_hide(sw->win);
 	window_destroy(sw->win);
-	usleep(50000);
-	switcher_done(sw);
 	switcher_clear(sw);
 }
 

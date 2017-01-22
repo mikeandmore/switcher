@@ -12,6 +12,18 @@
 #include <cairo.h>
 #include <pango/pangocairo.h>
 
+#define BORDER_LEN 2
+#define X_MARGIN 24
+#define Y_MARGIN 10
+#define SPC 8
+#define ITEM_SIZE 66
+#define ITEM_PADDING 1
+#define TEXT_Y_MARGIN 4
+
+#define X_OFFSET (X_MARGIN - SPC)
+
+#define FONT "Trebuchet MS Bold 9"
+
 static void change_window_shape(struct window *win, int w, int h, int r)
 {
 	Display *dpy = x11_display();
@@ -149,9 +161,23 @@ void switcher_read(struct switcher *sw)
 		parent = &(item->next);
 
 		struct read_closure closure = {item->pixbuf, 0};
-		item->image_surface =
+		size_t sz = ITEM_SIZE - 2 * ITEM_PADDING;
+		cairo_surface_t *surface =
 			cairo_image_surface_create_from_png_stream(
 				cairo_read_from_ptr, &closure);
+		double img_w = cairo_image_surface_get_width(surface);
+		double img_h = cairo_image_surface_get_height(surface);
+
+		cairo_surface_t *scaled_surface =
+			cairo_surface_create_similar(surface, CAIRO_CONTENT_COLOR_ALPHA, sz, sz);
+		cairo_t *scaled_surface_cr = cairo_create(scaled_surface);
+		cairo_scale(scaled_surface_cr, sz / img_w, sz / img_h);
+		cairo_set_source_surface(scaled_surface_cr, surface, 0, 0);
+		cairo_paint(scaled_surface_cr);
+		cairo_destroy(scaled_surface_cr);
+		cairo_surface_destroy(surface);
+
+		item->image_surface = scaled_surface;
 		sw->nr_items++;
 	}
 
@@ -217,18 +243,6 @@ static void round_rect(cairo_t *cr, int x, int y, int w, int h, double r)
 
 // icon switcher
 
-#define BORDER_LEN 2
-#define X_MARGIN 24
-#define Y_MARGIN 10
-#define SPC 8
-#define ITEM_SIZE 66
-#define ITEM_PADDING 1
-#define TEXT_Y_MARGIN 4
-
-#define X_OFFSET (X_MARGIN - SPC)
-
-#define FONT "Trebuchet MS Bold 9"
-
 static void icon_switcher_paint(struct switcher *sw, cairo_t *cr)
 {
 	round_rect(cr, BORDER_LEN / 2, BORDER_LEN / 2, sw->w - BORDER_LEN, sw->h - BORDER_LEN , 16 - BORDER_LEN / 2);
@@ -278,22 +292,11 @@ static void icon_switcher_paint(struct switcher *sw, cairo_t *cr)
 			g_object_unref(layout);
 		}
 		// draw the image
-		double img_w = cairo_image_surface_get_width(item->image_surface);
-		double img_h = cairo_image_surface_get_height(item->image_surface);
+		double x_off = X_OFFSET + pos * (SPC + ITEM_SIZE) + ITEM_PADDING;
+		double y_off = Y_MARGIN + ITEM_PADDING;
 
-		cairo_translate(cr,
-				X_OFFSET + pos * (SPC + ITEM_SIZE) + ITEM_PADDING,
-				Y_MARGIN + ITEM_PADDING);
-
-		cairo_scale(cr,
-			    (ITEM_SIZE - 2 * ITEM_PADDING) / img_w,
-			    (ITEM_SIZE - 2 * ITEM_PADDING) / img_h);
-
-		cairo_set_source_surface(cr, item->image_surface, 0, 0);
-
-		cairo_set_line_width(cr, 0);
+		cairo_set_source_surface(cr, item->image_surface, x_off, y_off);
 		cairo_paint(cr);
-		cairo_identity_matrix(cr);
 	}
 }
 

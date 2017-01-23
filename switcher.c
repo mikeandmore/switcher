@@ -390,15 +390,17 @@ static void icon_switcher_trigger(struct window *w, XEvent *event, void *data)
 		break;
 	case KeyRelease:
 		fprintf(stderr, "Global Release %d\n", event->xkey.keycode);
+		if (event->xkey.keycode == 23) {
+			return;
+		}
 		if (event->xkey.keycode == 64 && sw->items != NULL) {
 			icon_switcher_done(sw);
-			return;
 		}
 		break;
 	}
 
 	// forward whatever event
-	// fprintf(stderr, "forwarding trigger event\n");
+	fprintf(stderr, "forwarding trigger event\n");
 	Window focus_window;
 	int revert_to;
 	XGetInputFocus(x11_display(), &focus_window, &revert_to);

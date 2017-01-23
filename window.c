@@ -86,6 +86,13 @@ struct window *window_new(int x, int y, int w, int h, int double_buffer, long ev
 	return win;
 }
 
+void window_set_redirect_override(struct window *w)
+{
+	XSetWindowAttributes xswa;
+	xswa.override_redirect = True;
+	XChangeWindowAttributes(dpy, w->da, CWOverrideRedirect, &xswa);
+}
+
 void window_set_event_mask(struct window *w, long event_mask)
 {
 	XSelectInput(dpy, w->da, event_mask);
@@ -239,6 +246,11 @@ void x11_bind_key(int keycode, unsigned int modifiers)
 	XGrabKey(dpy, keycode, modifiers, root,
 		 False, GrabModeAsync, GrabModeAsync);
 	XSelectInput(dpy, root, KeyPressMask | KeyReleaseMask);
+}
+
+void x11_unbind_key(int keycode, unsigned modifiers)
+{
+	XUngrabKey(dpy, keycode, modifiers, DefaultRootWindow(dpy));
 }
 
 Display *x11_display()

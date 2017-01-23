@@ -27,18 +27,16 @@ class WindowSwitcher(object):
         self.window_id_map = {}
         self.id_window_map = {}
         self.free_id = set([])
-        self.listing = False
+        self.screen.force_update()
 
     def refresh_windows(self):
-        if self.listing:
-            return
-
-        self.screen.force_update()
+        sys.stderr.write('Event: refreshing\n')
         self.windows = sorted(filter(lambda w: w.get_class_instance_name() and not w.get_class_instance_name().startswith('FvwmButtons'), self.screen.get_windows()), key=lambda w: w.get_sort_order())
 
         for i in range(len(self.windows)):
             if self.windows[i].is_active():
                 w = self.windows[i]
+                sys.stderr.write('%s is active\n' % w.get_name())
                 self.windows.remove(w)
                 self.windows.insert(0, w)
 
@@ -63,16 +61,12 @@ class WindowSwitcher(object):
             self.id_window_map[i] = w
 
     def flush_windows(self):
-        if self.listing:
-            return
-
+        sys.stderr.write('Event: flushing\n')
         for i in range(len(self.windows)):
             self.windows[i].set_sort_order(i)
 
     def on_window_change(self, screen, prev_window):
-        if self.listing:
-            return
-
+        sys.stderr.write('Event: window change\n')
         self.refresh_windows()
         self.flush_windows()
 
@@ -89,7 +83,7 @@ class WindowSwitcher(object):
             icon = w.get_icon()
             # sys.stderr.write('%s\n' % (w.get_class_instance_name()))
             # sys.stderr.write('%s\n' % (w.is_active()))
-            sys.stderr.write('%s id %d\n' % (w.get_name(), self.window_id_map[w]))
+            sys.stderr.write('>>> %s id %d\n' % (w.get_name(), self.window_id_map[w]))
             # buf = icon.save_to_bufferv('png', [], [])[1]
             buf = None
             e = self.spec.find_by_wmclass(w.get_class_instance_name())
@@ -105,18 +99,15 @@ class WindowSwitcher(object):
         sys.stdout.write(struct.pack('i', 0))
         sys.stdout.flush()
 
-        self.listing = True
-
     def select_windows(self, channel):
         sel = int(channel.readline())
-        sys.stderr.write('selecting %d' % (sel - 1,))
+        sys.stderr.write('Event: selecting %d' % (sel - 1,))
         if sel == 0:
             return
 
         w = self.id_window_map[sel]
-        w.activate(0)
-        self.listing = False
-        return
+        sys.stderr.write('activating %s\n' % w.get_name())
+        w.activate(time.time())
 
 def dispatch_io(channel, condition, sw):
     line = channel.readline()

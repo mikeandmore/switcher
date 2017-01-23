@@ -342,13 +342,6 @@ static void icon_switcher_event_handler(struct window *w, XEvent *event, void *d
 		break;
 	case NoExpose:
 		break;
-	case KeyRelease:
-		fprintf(stderr, "Release %d\n", event->xkey.keycode);
-		if (event->xkey.keycode == 64) {
-			fprintf(stderr, "destroy\n");
-			icon_switcher_done(sw);
-		}
-		break;
 	default:
 		printf("unhandled event %d\n", event->type);
 	}
@@ -362,8 +355,9 @@ static void icon_switcher_switch_or_show(struct switcher *sw, unsigned int times
 			icon_switcher_calculate_size(sw);
 			sw->win = window_new(sw->x, sw->y, sw->w, sw->h,
 					     1,
-					     ExposureMask | KeyReleaseMask,
+					     ExposureMask,
 					     icon_switcher_event_handler, sw);
+			window_set_redirect_override(sw->win);
 			change_window_shape(sw->win, sw->w, sw->h, 16);
 			window_disable_decorator(sw->win);
 			window_set_sticky(sw->win);
@@ -380,27 +374,38 @@ static void icon_switcher_switch_or_show(struct switcher *sw, unsigned int times
 	}
 }
 
+
+static struct switcher *gsw;
+
 static void icon_switcher_trigger(struct window *w, XEvent *event, void *data)
 {
 	struct switcher *sw = data;
 	switch (event->type) {
 	case KeyPress:
-		// fprintf(stderr, "Press %d\n", event->xkey.keycode);
+		fprintf(stderr, "Global Press %d\n", event->xkey.keycode);
 		if (event->xkey.keycode == 23) { // tab
 			icon_switcher_switch_or_show(sw, event->xkey.time);
+			return;
 		}
 		break;
 	case KeyRelease:
 		fprintf(stderr, "Global Release %d\n", event->xkey.keycode);
-		if (event->xkey.keycode == 64) {
+		if (event->xkey.keycode == 64 && sw->items != NULL) {
 			icon_switcher_done(sw);
+			return;
 		}
 		break;
 	}
 
+	// forward whatever event
+	// fprintf(stderr, "forwarding trigger event\n");
+	Window focus_window;
+	int revert_to;
+	XGetInputFocus(x11_display(), &focus_window, &revert_to);
+	XKeyEvent evt = event->xkey;
+	evt.window = focus_window;
+	XSendEvent(x11_display(), focus_window, True, KeyPressMask, (XEvent *) &evt);
 }
-
-static struct switcher *gsw;
 
 static void show_usage()
 {
@@ -440,7 +445,7 @@ int main(int argc, char *argv[])
 start:
 	x11_init();
 	x11_bind_key(gsw->trigger_key_code, gsw->modifier_mask);
-	x11_bind_key(gsw->release_key_code, gsw->modifier_mask);
+	x11_bind_key(gsw->release_key_code, 0);
 
 	if (argc < 2) {
 		show_usage();

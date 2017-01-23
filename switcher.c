@@ -334,6 +334,9 @@ static void icon_switcher_event_handler(struct window *w, XEvent *event, void *d
 	case Expose:
 		if (sw->items == NULL)
 			break;
+		// fprintf(stderr, "Graphic: expose\n");
+
+		change_window_shape(sw->win, sw->w, sw->h, 16);
 
 		cr = cairo_create(window_surface(sw->win));
 		icon_switcher_paint(sw, cr);
@@ -358,7 +361,6 @@ static void icon_switcher_switch_or_show(struct switcher *sw, unsigned int times
 					     ExposureMask,
 					     icon_switcher_event_handler, sw);
 			window_set_redirect_override(sw->win);
-			change_window_shape(sw->win, sw->w, sw->h, 16);
 			window_disable_decorator(sw->win);
 			window_set_sticky(sw->win);
 			window_set_skip_pager(sw->win);
@@ -366,7 +368,6 @@ static void icon_switcher_switch_or_show(struct switcher *sw, unsigned int times
 			window_set_timestamp(sw->win, timestamp);
 			window_show(sw->win);
 			// window_move(sw->win, sw->x, sw->y);
-			XFlush(x11_display());
 		}
 	} else {
 		icon_switcher_next(sw);

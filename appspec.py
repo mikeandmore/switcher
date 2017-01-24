@@ -1,6 +1,9 @@
+#!/usr/bin/python
+
 from xdg import BaseDirectory, IconTheme
 from xdg.DesktopEntry import DesktopEntry
 
+import subprocess
 import os
 
 class AppSpecs(object):
@@ -37,3 +40,16 @@ class AppSpecs(object):
 if __name__ == '__main__':
     spec = AppSpecs()
     spec.build_wmclass_index()
+
+    nameidx = {}
+    for app in spec.apps:
+        nameidx[app.getName()] = app.getExec()
+
+    proc = subprocess.Popen(['dmenu', '-i'], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+
+    for k, v in nameidx.items():
+        proc.stdin.write('%s\n' % k.encode('utf-8'))
+    proc.stdin.close()
+
+    name = proc.stdout.read()[:-1]
+    os.system('nohup %s > /dev/null 2> /dev/null &' % nameidx[name])

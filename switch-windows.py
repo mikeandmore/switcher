@@ -2,19 +2,12 @@
 
 import gi
 import sys
-import struct
-import ctypes
-import subprocess
-import os
 import time
-import signal
 
-gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk, Wnck, Gdk, GdkX11, GLib
+from gi.repository import Wnck
 
 from appspec import AppSpecs
-
-BINARY_PATH="/home/mike/bin/switcher"
+from switcher import SwitcherItem, run_switcher, write_item
 
 class WindowSwitcher(object):
 
@@ -70,7 +63,7 @@ class WindowSwitcher(object):
         self.refresh_windows()
         self.flush_windows()
 
-    def list_windows(self):
+    def on_list(self):
         self.refresh_windows()
 
         if len(self.windows) > 1:
@@ -91,15 +84,10 @@ class WindowSwitcher(object):
                 buf = file(e.icon_path).read()
             else:
                 buf = icon.save_to_bufferv('png', [], [])[1]
-            sys.stdout.write(struct.pack('i', self.window_id_map[w]))
-            sys.stdout.write(struct.pack('i', len(name)))
-            sys.stdout.write(struct.pack('i', len(buf)))
-            sys.stdout.write(name)
-            sys.stdout.write(buf)
-        sys.stdout.write(struct.pack('i', 0))
-        sys.stdout.flush()
+            write_item(SwitcherItem(id=self.window_id_map[w], name=name, png_buf=buf))
+        write_item(None)
 
-    def select_windows(self, channel):
+    def on_select(self, channel):
         sel = int(channel.readline())
         sys.stderr.write('Event: selecting %d' % (sel - 1,))
         if sel == 0:
@@ -109,21 +97,5 @@ class WindowSwitcher(object):
         sys.stderr.write('activating %s\n' % w.get_name())
         w.activate(time.time())
 
-def dispatch_io(channel, condition, sw):
-    line = channel.readline()
-    sys.stderr.write('line: ' + line)
-    if line == 'list\n':
-        sw.list_windows()
-    elif line == 'select\n':
-        sw.select_windows(channel)
-    else:
-        sys.stderr.write('Unknown command: %s' % line)
-    return True
-
 if __name__ == '__main__':
-    signal.signal(signal.SIGPIPE, signal.SIG_IGN)
-    Gtk.init()
-    chn = GLib.IOChannel(0)
-    sw = WindowSwitcher()
-    GLib.io_add_watch(chn, 0, GLib.IO_IN, dispatch_io, sw)
-    Gtk.main()
+    run_switcher(WindowSwitcher())

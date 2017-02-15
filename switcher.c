@@ -3,6 +3,10 @@
 #include <string.h>
 #include <unistd.h>
 #include <math.h>
+#include <ctype.h>
+#include <assert.h>
+
+#include <X11/XKBlib.h>
 
 #include <X11/extensions/shape.h>
 #include <X11/extensions/Xrandr.h>
@@ -59,9 +63,12 @@ struct switcher_item {
 	int pixbuf_len;
 	void *pixbuf;
 	cairo_surface_t *image_surface;
+	int match_pos;
 
 	struct switcher_item *next;
 };
+
+#define MAX_KEYBOARD_INPUT 1024
 
 struct switcher {
 	struct window *win;
@@ -71,7 +78,12 @@ struct switcher {
 	FILE *provider_process_stdout;
 	int nr_items;
 	int x, y, w, h;
-	int auto_default;
+
+	int keyboard_select;
+	int nr_keyboard_select;
+	int cur_keyboard_select;
+	struct switcher_item **keyboard_filtered_items;
+	char keyboard_input[MAX_KEYBOARD_INPUT];
 
 	int trigger_key_code, release_key_code;
 	int modifier_mask;
@@ -129,6 +141,29 @@ cairo_read_from_ptr(void *closure, unsigned char *data, unsigned int length)
 	return CAIRO_STATUS_SUCCESS;
 }
 
+static void switcher_refresh_keyboard_filter(struct switcher *sw)
+{
+	struct switcher_item *p = sw->items;
+	char *t = malloc(MAX_KEYBOARD_INPUT);
+	int i = 0, j = 0;
+	fprintf(stderr, "keyword %s\n", sw->keyboard_input);
+	for (i = 0; i < sw->nr_keyboard_select && p; p = p->next) {
+		strncpy(t, p->name, MAX_KEYBOARD_INPUT);
+		for (j = 0; j < strlen(p->name); j++) t[j] = tolower(p->name[j]);
+
+		char *pm = strstr(t, sw->keyboard_input);
+		if (pm) {
+			p->match_pos = pm - t;
+			sw->keyboard_filtered_items[i++] = p;
+		}
+	}
+	sw->nr_items = i;
+	sw->cur_keyboard_select = 0;
+	if (i > 0)
+		sw->selected = sw->keyboard_filtered_items[0];
+	free(t);
+}
+
 void switcher_read(struct switcher *sw)
 {
 	fprintf(sw->provider_process_stdin, "list\n");
@@ -156,6 +191,7 @@ void switcher_read(struct switcher *sw)
 		if (fread(item->name, name_len, 1, pipe) == 0) abort();
 		item->name[name_len] = 0;
 		if (fread(item->pixbuf, pixbuf_len, 1, pipe) == 0) abort();
+		item->match_pos = -1;
 
 		*parent = item;
 		parent = &(item->next);
@@ -181,8 +217,11 @@ void switcher_read(struct switcher *sw)
 		sw->nr_items++;
 	}
 
-	if (sw->auto_default)
-		sw->selected = sw->items;
+	sw->selected = sw->items;
+
+	if (sw->keyboard_select) {
+		switcher_refresh_keyboard_filter(sw);
+	}
 }
 
 void switcher_clear(struct switcher *sw)
@@ -195,6 +234,8 @@ void switcher_clear(struct switcher *sw)
 	}
 	sw->items = NULL;
 	sw->nr_items = 0;
+	sw->selected = NULL;
+	memset(sw->keyboard_input, 0, MAX_KEYBOARD_INPUT);
 }
 
 static void switcher_done(struct switcher *sw)
@@ -203,6 +244,22 @@ static void switcher_done(struct switcher *sw)
 		fprintf(sw->provider_process_stdin,"select\n%d\n", sw->selected->id);
 		fflush(sw->provider_process_stdin);
 	}
+}
+
+static void switcher_append_keyboard_char(struct switcher *sw, char ch)
+{
+	size_t len = strlen(sw->keyboard_input);
+	if (len < MAX_KEYBOARD_INPUT - 1)
+		sw->keyboard_input[len] = ch;
+	switcher_refresh_keyboard_filter(sw);
+}
+
+static void switcher_backspace_keyboard(struct switcher *sw)
+{
+	size_t len = strlen(sw->keyboard_input);
+	if (len)
+		sw->keyboard_input[len - 1] = 0;
+	switcher_refresh_keyboard_filter(sw);
 }
 
 static void switcher_calculate_position(struct switcher *sw)
@@ -243,6 +300,57 @@ static void round_rect(cairo_t *cr, int x, int y, int w, int h, double r)
 
 // icon switcher
 
+static void icon_switcher_paint_item(struct switcher *sw, struct switcher_item *item, cairo_t *cr, int pos)
+{
+	char *t = malloc(MAX_KEYBOARD_INPUT);
+	if (item == sw->selected) {
+		round_rect(cr, X_OFFSET + pos * (SPC + ITEM_SIZE), Y_MARGIN,
+			   ITEM_SIZE, ITEM_SIZE, 16);
+		cairo_set_source_rgb(cr, 0x17 / 256., 0x3b / 256., 0x73 / 256.);
+		cairo_fill(cr);
+		round_rect(cr, X_OFFSET + pos * (SPC + ITEM_SIZE), Y_MARGIN,
+			   ITEM_SIZE, ITEM_SIZE, 16);
+		cairo_set_source_rgb(cr, 1., 1., 1.);
+		cairo_set_line_width(cr, 2);
+		cairo_stroke(cr);
+
+		PangoLayout *layout = pango_cairo_create_layout(cr);
+		PangoFontDescription *desc = pango_font_description_from_string(FONT);
+		memcpy(t, item->name, item->name_len + 1);
+		if (sw->keyboard_select && item->match_pos != -1) {
+			int l = strlen(sw->keyboard_input);
+			memmove(t + item->match_pos + 3, t + item->match_pos, item->name_len + 1 - item->match_pos);
+			memcpy(t + item->match_pos, "<u>", 3);
+			memmove(t + item->match_pos + 7 + l, t + item->match_pos + 3 + l, item->name_len + 1 - item->match_pos - l);
+			memcpy(t + item->match_pos + 3 + l, "</u>", 4);
+		}
+
+		pango_layout_set_markup(layout, t, strlen(t));
+		pango_layout_set_font_description(layout, desc);
+		pango_font_description_free(desc);
+
+		int text_width, text_height;
+		pango_layout_get_size(layout, &text_width, &text_height);
+		int xpos = X_OFFSET + pos * (SPC + ITEM_SIZE) + ITEM_SIZE / 2;
+		xpos -= text_width / PANGO_SCALE / 2;
+
+		if (xpos + text_width / PANGO_SCALE > sw->w - X_OFFSET)
+			xpos = sw->w - X_MARGIN - text_width / PANGO_SCALE;
+		if (xpos < X_OFFSET)
+			xpos = X_OFFSET;
+
+		cairo_move_to(cr, xpos, Y_MARGIN + ITEM_SIZE + TEXT_Y_MARGIN);
+		pango_cairo_show_layout(cr, layout);
+		g_object_unref(layout);
+	}
+	// draw the image
+	double x_off = X_OFFSET + pos * (SPC + ITEM_SIZE) + ITEM_PADDING;
+	double y_off = Y_MARGIN + ITEM_PADDING;
+
+	cairo_set_source_surface(cr, item->image_surface, x_off, y_off);
+	cairo_paint(cr);
+}
+
 static void icon_switcher_paint(struct switcher *sw, cairo_t *cr)
 {
 	round_rect(cr, BORDER_LEN / 2, BORDER_LEN / 2, sw->w - BORDER_LEN, sw->h - BORDER_LEN , 16 - BORDER_LEN / 2);
@@ -259,52 +367,28 @@ static void icon_switcher_paint(struct switcher *sw, cairo_t *cr)
 	cairo_pattern_destroy(pattern);
 
 	int pos = 0;
-	for (struct switcher_item *item = sw->items; item != NULL; item = item->next, pos++) {
-		if (item == sw->selected) {
-			round_rect(cr, X_OFFSET + pos * (SPC + ITEM_SIZE), Y_MARGIN,
-				   ITEM_SIZE, ITEM_SIZE, 16);
-			cairo_set_source_rgb(cr, 0x17 / 256., 0x3b / 256., 0x73 / 256.);
-			cairo_fill(cr);
-			round_rect(cr, X_OFFSET + pos * (SPC + ITEM_SIZE), Y_MARGIN,
-				   ITEM_SIZE, ITEM_SIZE, 16);
-			cairo_set_source_rgb(cr, 1., 1., 1.);
-			cairo_set_line_width(cr, 2);
-			cairo_stroke(cr);
-
-			PangoLayout *layout = pango_cairo_create_layout(cr);
-			PangoFontDescription *desc = pango_font_description_from_string(FONT);
-			pango_layout_set_text(layout, item->name, item->name_len);
-			pango_layout_set_font_description(layout, desc);
-			pango_font_description_free(desc);
-
-			int text_width, text_height;
-			pango_layout_get_size(layout, &text_width, &text_height);
-			int xpos = X_OFFSET + pos * (SPC + ITEM_SIZE) + ITEM_SIZE / 2;
-			xpos -= text_width / PANGO_SCALE / 2;
-
-			if (xpos + text_width / PANGO_SCALE > sw->w - X_OFFSET)
-				xpos = sw->w - X_MARGIN - text_width / PANGO_SCALE;
-			if (xpos < X_OFFSET)
-				xpos = X_OFFSET;
-
-			cairo_move_to(cr, xpos, Y_MARGIN + ITEM_SIZE + TEXT_Y_MARGIN);
-			pango_cairo_show_layout(cr, layout);
-			g_object_unref(layout);
+	if (!sw->keyboard_select) {
+		for (struct switcher_item *item = sw->items; item != NULL; item = item->next, pos++) {
+			icon_switcher_paint_item(sw, item, cr, pos);
 		}
-		// draw the image
-		double x_off = X_OFFSET + pos * (SPC + ITEM_SIZE) + ITEM_PADDING;
-		double y_off = Y_MARGIN + ITEM_PADDING;
-
-		cairo_set_source_surface(cr, item->image_surface, x_off, y_off);
-		cairo_paint(cr);
+	} else {
+		for (pos = 0; pos < sw->nr_items; pos++) {
+			icon_switcher_paint_item(sw, sw->keyboard_filtered_items[pos], cr, pos);
+		}
 	}
 }
 
 static void icon_switcher_next(struct switcher *sw)
 {
-	if (sw->selected == NULL) sw->selected = sw->items;
-	else sw->selected = sw->selected->next;
-	if (sw->auto_default && sw->selected == NULL) sw->selected = sw->items;
+	if (!sw->keyboard_select) {
+		sw->selected = sw->selected->next;
+		if (sw->selected == NULL) sw->selected = sw->items;
+	} else {
+		sw->cur_keyboard_select++;
+		if (sw->cur_keyboard_select == sw->nr_items)
+			sw->cur_keyboard_select = 0;
+		sw->selected = sw->keyboard_filtered_items[sw->cur_keyboard_select];
+	}
 }
 
 static void icon_switcher_calculate_size(struct switcher *sw)
@@ -345,6 +429,31 @@ static void icon_switcher_event_handler(struct window *w, XEvent *event, void *d
 		break;
 	case NoExpose:
 		break;
+	case KeyPress:
+		assert(sw->keyboard_select);
+		KeySym sym = XkbKeycodeToKeysym(x11_display(), event->xkey.keycode, 0, 0);
+		if (event->xkey.keycode == 23) { // tab
+			icon_switcher_next(sw);
+		} else if (sym >= XK_a && sym <= XK_z) {
+			switcher_append_keyboard_char(sw, sym - XK_a + 'a');
+			icon_switcher_calculate_size(sw);
+		} else if (event->xkey.keycode == 22) {
+			switcher_backspace_keyboard(sw);
+			icon_switcher_calculate_size(sw);
+		} else if (event->xkey.keycode == sw->release_key_code) { // enter
+			icon_switcher_done(sw);
+			break;
+		} else if (event->xkey.keycode == 9) { // escape
+			window_hide(sw->win);
+			window_destroy(sw->win);
+			switcher_clear(sw);
+			break;
+		} else {
+			printf("KeyPress %d\n", event->xkey.keycode);
+			break;
+		}
+		window_queue_expose(sw->win);
+		break;
 	default:
 		printf("unhandled event %d\n", event->type);
 	}
@@ -356,11 +465,14 @@ static void icon_switcher_switch_or_show(struct switcher *sw, unsigned int times
 		switcher_read(sw);
 		if (sw->items) {
 			icon_switcher_calculate_size(sw);
+			int mask = ExposureMask;
+			if (sw->keyboard_select) mask |= KeyPressMask;
 			sw->win = window_new(sw->x, sw->y, sw->w, sw->h,
 					     1,
-					     ExposureMask,
+					     mask,
 					     icon_switcher_event_handler, sw);
-			window_set_redirect_override(sw->win);
+			if (!sw->keyboard_select)
+				window_set_redirect_override(sw->win);
 			window_disable_decorator(sw->win);
 			window_set_sticky(sw->win);
 			window_set_skip_pager(sw->win);
@@ -384,24 +496,27 @@ static void icon_switcher_trigger(struct window *w, XEvent *event, void *data)
 	switch (event->type) {
 	case KeyPress:
 		fprintf(stderr, "Global Press %d\n", event->xkey.keycode);
-		if (event->xkey.keycode == 23) { // tab
+		if (event->xkey.keycode == gsw->trigger_key_code) {
 			icon_switcher_switch_or_show(sw, event->xkey.time);
 			return;
 		}
 		break;
 	case KeyRelease:
 		fprintf(stderr, "Global Release %d\n", event->xkey.keycode);
-		if (event->xkey.keycode == 23) {
+		if (event->xkey.keycode == gsw->trigger_key_code) {
 			return;
 		}
-		if (event->xkey.keycode == 64 && sw->items != NULL) {
+		if (!sw->keyboard_select && event->xkey.keycode == gsw->release_key_code && sw->items != NULL) {
 			icon_switcher_done(sw);
 		}
 		break;
 	}
 
-	// forward whatever event
-	fprintf(stderr, "forwarding trigger event\n");
+	// forward whatever event, only when keyboard select is off
+	// fprintf(stderr, "forwarding trigger event\n");
+	if (sw->keyboard_select)
+		return;
+
 	Window focus_window;
 	int revert_to;
 	XGetInputFocus(x11_display(), &focus_window, &revert_to);
@@ -420,14 +535,13 @@ int main(int argc, char *argv[])
 	gsw = malloc(sizeof(struct switcher));
 	memset(gsw, 0, sizeof(struct switcher));
 
-	gsw->auto_default = 1;
 	gsw->trigger_key_code = 23; // Tab
 	gsw->release_key_code = 64; // Alt
 	gsw->modifier_mask = 8; // Alt
 
 	int opt;
 	int key_code;
-	while ((opt = getopt(argc, argv, "t:r:m:"))) {
+	while ((opt = getopt(argc, argv, "t:r:m:k:"))) {
 		switch (opt) {
 		case 't':
 			key_code = atoi(optarg);
@@ -441,22 +555,36 @@ int main(int argc, char *argv[])
 			key_code = atoi(optarg);
 			if (key_code != 0) gsw->modifier_mask = key_code;
 			break;
+		case 'k':
+			gsw->keyboard_select = 1;
+			gsw->nr_keyboard_select = atoi(optarg);
+			gsw->release_key_code = gsw->trigger_key_code = 36;
+			break;
 		default:
 			goto start;
 		}
 	}
 start:
 	x11_init();
+
 	x11_bind_key(gsw->trigger_key_code, gsw->modifier_mask);
-	x11_bind_key(gsw->release_key_code, 0);
+	if (!gsw->keyboard_select)
+		x11_bind_key(gsw->release_key_code, 0);
+
+	if (gsw->keyboard_select) {
+		if (gsw->nr_keyboard_select == 0)
+			abort();
+		gsw->keyboard_filtered_items = malloc(sizeof(struct switcher_item *)
+						      * gsw->nr_keyboard_select);
+	}
 
 	if (argc < 2) {
 		show_usage();
 	}
 
-	char *pipe_argv[argc];
+	char *pipe_argv[argc - optind + 1];
 	memcpy(pipe_argv, argv + optind, sizeof(char *) * (argc - optind));
-	pipe_argv[argc - 1] = NULL;
+	pipe_argv[argc - optind] = NULL;
 
 	switcher_run_provider(gsw, pipe_argv[0], pipe_argv);
 

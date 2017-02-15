@@ -5,6 +5,7 @@ from xdg.DesktopEntry import DesktopEntry
 
 import subprocess
 import os
+import re
 
 class AppSpecs(object):
     def __init__(self):
@@ -52,4 +53,5 @@ if __name__ == '__main__':
     proc.stdin.close()
 
     name = proc.stdout.read()[:-1]
-    os.system('nohup %s > /dev/null 2> /dev/null &' % nameidx[name])
+    cmd = re.sub(r'\%[a-zA-Z]', r'', nameidx[name])
+    os.system('nohup %s > /dev/null 2> /dev/null &' % cmd)

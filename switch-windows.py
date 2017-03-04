@@ -15,7 +15,7 @@ class WindowSwitcher(object):
         self.screen = Wnck.Screen.get_default()
         self.screen.connect('active-window-changed', self.on_window_change)
         self.windows = []
-        self.spec = AppSpecs()
+        self.spec = AppSpecs(threshold=1200)
         self.spec.build_wmclass_index()
         self.window_id_map = {}
         self.id_window_map = {}
@@ -70,6 +70,9 @@ class WindowSwitcher(object):
             t = self.windows[0]
             self.windows[0] = self.windows[1]
             self.windows[1] = t
+
+        if self.spec.refresh():
+            self.spec.build_wmclass_index()
 
         for w in self.windows:
             name = w.get_name()

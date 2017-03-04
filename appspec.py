@@ -3,12 +3,24 @@
 from xdg import BaseDirectory, IconTheme
 from xdg.DesktopEntry import DesktopEntry
 
+from datetime import datetime
+
 import subprocess
 import os
 import re
 
 class AppSpecs(object):
-    def __init__(self):
+    def __init__(self, threshold=3):
+        self.refresh()
+        self.threshold = threshold
+
+    def refresh(self):
+        now = datetime.now()
+
+        if hasattr(self, 'ts') and (now - self.ts).seconds < self.threshold:
+            return False
+
+        self.ts = now
         self.apps = []
         for data_dir in BaseDirectory.xdg_data_dirs:
             app_dir = data_dir + '/applications/'
@@ -22,6 +34,7 @@ class AppSpecs(object):
                     if e.getIcon():
                         e.icon_path = IconTheme.getIconPath(e.getIcon(), extensions=['png'])
                     self.apps.append(e)
+        return True
 
     def build_wmclass_index(self):
         self.wmclass_index = {}
@@ -42,16 +55,5 @@ if __name__ == '__main__':
     spec = AppSpecs()
     spec.build_wmclass_index()
 
-    nameidx = {}
     for app in spec.apps:
-        nameidx[app.getName()] = app.getExec()
-
-    proc = subprocess.Popen(['dmenu', '-i'], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-
-    for k, v in nameidx.items():
-        proc.stdin.write('%s\n' % k.encode('utf-8'))
-    proc.stdin.close()
-
-    name = proc.stdout.read()[:-1]
-    cmd = re.sub(r'\%[a-zA-Z]', r'', nameidx[name])
-    os.system('nohup %s > /dev/null 2> /dev/null &' % cmd)
+        print('%s' % app.getName())

@@ -11,6 +11,7 @@ class Launcher(object):
         self.specs = AppSpecs()
                 
     def on_list(self):
+        self.specs.refresh()
         i = 1
         items = []
         for app in self.specs.apps:

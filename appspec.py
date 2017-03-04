@@ -2,25 +2,34 @@
 
 from xdg import BaseDirectory, IconTheme
 from xdg.DesktopEntry import DesktopEntry
+import threading
 
 from datetime import datetime
+import time
 
 import subprocess
 import os
 import re
 
 class AppSpecs(object):
-    def __init__(self, threshold=3):
+    def __init__(self, threshold=30):
         self.refresh()
+        self.lock = threading.Lock()
         self.threshold = threshold
+        self.refresh_thread = threading.Thread(target=self.refresh_thread)
+
+        self.refresh()
+        self.build_wmclass_index()
+
+    def refresh_thread(self):
+        while True:
+            time.sleep(self.refresh_thread)
+            with self.lock:
+                self.refresh()
+                self.build_wmclass_index()
 
     def refresh(self):
         now = datetime.now()
-
-        if hasattr(self, 'ts') and (now - self.ts).seconds < self.threshold:
-            return False
-
-        self.ts = now
         self.apps = []
         for data_dir in BaseDirectory.xdg_data_dirs:
             app_dir = data_dir + '/applications/'
@@ -34,7 +43,6 @@ class AppSpecs(object):
                     if e.getIcon():
                         e.icon_path = IconTheme.getIconPath(e.getIcon(), extensions=['png'])
                     self.apps.append(e)
-        return True
 
     def build_wmclass_index(self):
         self.wmclass_index = {}

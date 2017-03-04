@@ -15,8 +15,7 @@ class WindowSwitcher(object):
         self.screen = Wnck.Screen.get_default()
         self.screen.connect('active-window-changed', self.on_window_change)
         self.windows = []
-        self.spec = AppSpecs(threshold=1200)
-        self.spec.build_wmclass_index()
+        self.spec = AppSpecs()
         self.window_id_map = {}
         self.id_window_map = {}
         self.free_id = set([])
@@ -71,24 +70,22 @@ class WindowSwitcher(object):
             self.windows[0] = self.windows[1]
             self.windows[1] = t
 
-        if self.spec.refresh():
-            self.spec.build_wmclass_index()
-
-        for w in self.windows:
-            name = w.get_name()
-            icon = w.get_icon()
-            # sys.stderr.write('%s\n' % (w.get_class_instance_name()))
-            # sys.stderr.write('%s\n' % (w.is_active()))
-            sys.stderr.write('>>> %s id %d\n' % (w.get_name(), self.window_id_map[w]))
-            # buf = icon.save_to_bufferv('png', [], [])[1]
-            buf = None
-            e = self.spec.find_by_wmclass(w.get_class_instance_name())
-            if e and e.icon_path:
-                buf = file(e.icon_path).read()
-            else:
-                buf = icon.save_to_bufferv('png', [], [])[1]
-            write_item(SwitcherItem(id=self.window_id_map[w], name=name, png_buf=buf))
-        write_item(None)
+        with self.spec.lock:
+            for w in self.windows:
+                name = w.get_name()
+                icon = w.get_icon()
+                # sys.stderr.write('%s\n' % (w.get_class_instance_name()))
+                # sys.stderr.write('%s\n' % (w.is_active()))
+                sys.stderr.write('>>> %s id %d\n' % (w.get_name(), self.window_id_map[w]))
+                # buf = icon.save_to_bufferv('png', [], [])[1]
+                buf = None
+                e = self.spec.find_by_wmclass(w.get_class_instance_name())
+                if e and e.icon_path:
+                    buf = file(e.icon_path).read()
+                else:
+                    buf = icon.save_to_bufferv('png', [], [])[1]
+                write_item(SwitcherItem(id=self.window_id_map[w], name=name, png_buf=buf))
+            write_item(None)
 
     def on_select(self, channel):
         sel = int(channel.readline())

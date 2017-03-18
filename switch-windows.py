@@ -13,65 +13,70 @@ class WindowSwitcher(object):
 
     def __init__(self):
         self.screen = Wnck.Screen.get_default()
-        self.screen.connect('active-window-changed', self.on_window_change)
-        self.windows = []
         self.spec = AppSpecs()
         self.window_id_map = {}
         self.id_window_map = {}
         self.free_id = set([])
         self.screen.force_update()
+        self.windows = sorted(self.screen.get_windows(), key=lambda w: w.get_sort_order())
+        self.adjust_active_order()
+        self.last_action = None
 
-    def refresh_windows(self):
-        sys.stderr.write('Event: refreshing\n')
-        self.windows = sorted(filter(lambda w: w.get_class_instance_name() and not w.get_class_instance_name().startswith('FvwmButtons'), self.screen.get_windows()), key=lambda w: w.get_sort_order())
+        for w, i in zip(self.windows, range(len(self.windows))):
+            self.window_id_map[w] = i + 1
+            self.id_window_map[i + 1] = w
 
+        self.screen.connect('active-window-changed', self.on_window_change)
+        self.screen.connect('window-opened', self.on_window_open)
+        self.screen.connect('window-closed', self.on_window_close)
+
+    def adjust_active_order(self):
         for i in range(len(self.windows)):
             if self.windows[i].is_active():
                 w = self.windows[i]
-                sys.stderr.write('%s is active\n' % w.get_name())
                 self.windows.remove(w)
                 self.windows.insert(0, w)
 
-        # assigning IDs
-        window_set = set(self.windows)
-        for w, i in self.window_id_map.items():
-            if w in window_set:
-                continue
-            del self.window_id_map[w]
-            del self.id_window_map[i]
-            self.free_id.add(i)
-
-        for w in self.windows:
-            if w in self.window_id_map:
-                continue
-
-            i = len(self.window_id_map) + 1
-            if len(self.free_id) > 0:
-                i = self.free_id.pop()
-
-            self.window_id_map[w] = i
-            self.id_window_map[i] = w
-
-    def flush_windows(self):
-        sys.stderr.write('Event: flushing\n')
-
-        if len(self.windows) > 1 and not self.windows[0].is_active():
-            t = self.windows[0]
-            del self.windows[0]
-            self.windows.append(t)
-            self.windows[0].activate(time.time())
-
         for i in range(len(self.windows)):
+            sys.stderr.write('Flushing: >>> %s\n' % self.windows[i].get_name())
             self.windows[i].set_sort_order(i)
 
+    def try_first_window(self, exclude=[]):
+        if not any(map(lambda w: w.is_active(), self.windows)):
+            for w in self.windows:
+                if w in exclude:
+                    continue
+                if not w.is_minimized():
+                    return w
+        return None
+
     def on_window_change(self, screen, prev_window):
-        sys.stderr.write('Event: window change\n')
-        self.refresh_windows()
-        self.flush_windows()
+        if not prev_window:
+            self.adjust_active_order()
+            return
+        
+        sys.stderr.write('Prev %s\n' % prev_window.get_name())
+        w = self.try_first_window(exclude=[prev_window])
+        if w != None:
+            w.activate(time.time())
+        self.adjust_active_order()
+
+    def on_window_open(self, screen, window):
+        self.windows.insert(0, window)
+        new_id = len(self.windows) + 1
+        if len(self.free_id) > 0:
+            new_id = self.free_id.pop()
+        self.id_window_map[new_id] = window
+        self.window_id_map[window] = new_id
+
+    def on_window_close(self, screen, window):
+        old_id = self.window_id_map[window]
+        self.windows.remove(window)
+        del self.id_window_map[old_id]
+        del self.window_id_map[window]
+        self.free_id.add(old_id)
 
     def on_list(self):
-        self.refresh_windows()
-
         if len(self.windows) > 1:
             t = self.windows[0]
             self.windows[0] = self.windows[1]
@@ -96,12 +101,10 @@ class WindowSwitcher(object):
 
     def on_select(self, channel):
         sel = int(channel.readline())
-        sys.stderr.write('Event: selecting %d' % (sel - 1,))
         if sel == 0:
             return
 
         w = self.id_window_map[sel]
-        sys.stderr.write('activating %s\n' % w.get_name())
         w.activate(time.time())
 
 if __name__ == '__main__':

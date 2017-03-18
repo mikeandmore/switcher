@@ -21,9 +21,11 @@ class AppSpecs(object):
         self.refresh()
         self.build_wmclass_index()
 
+        self.refresh_thread.start()
+
     def refresh_thread(self):
         while True:
-            time.sleep(self.refresh_thread)
+            time.sleep(self.threshold)
             with self.lock:
                 self.refresh()
                 self.build_wmclass_index()

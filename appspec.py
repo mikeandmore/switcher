@@ -10,6 +10,7 @@ import time
 import subprocess
 import os
 import re
+import sys
 
 class AppSpecs(object):
     def __init__(self, threshold=30):
@@ -27,6 +28,7 @@ class AppSpecs(object):
         while True:
             time.sleep(self.threshold)
             with self.lock:
+                sys.stderr.write('Refreshing App Icons\n')
                 self.refresh()
                 self.build_wmclass_index()
 

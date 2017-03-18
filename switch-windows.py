@@ -54,6 +54,13 @@ class WindowSwitcher(object):
 
     def flush_windows(self):
         sys.stderr.write('Event: flushing\n')
+
+        if len(self.windows) > 1 and not self.windows[0].is_active():
+            t = self.windows[0]
+            del self.windows[0]
+            self.windows.append(t)
+            self.windows[0].activate(time.time())
+
         for i in range(len(self.windows)):
             self.windows[i].set_sort_order(i)
 

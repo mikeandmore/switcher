@@ -77,13 +77,14 @@ class WindowSwitcher(object):
         self.free_id.add(old_id)
 
     def on_list(self):
-        if len(self.windows) > 1:
-            t = self.windows[0]
-            self.windows[0] = self.windows[1]
-            self.windows[1] = t
+        candidates = list(self.windows)
+        if len(candidates) > 1:
+            t = candidates[0]
+            candidates[0] = candidates[1]
+            candidates[1] = t
 
         with self.spec.lock:
-            for w in self.windows:
+            for w in candidates:
                 name = w.get_name()
                 icon = w.get_icon()
                 # sys.stderr.write('%s\n' % (w.get_class_instance_name()))

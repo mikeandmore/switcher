@@ -29,7 +29,7 @@ class WindowSwitcher(object):
         self.screen.connect('active-window-changed', self.on_window_change)
         self.screen.connect('window-opened', self.on_window_open)
         self.screen.connect('window-closed', self.on_window_close)
-
+        
     def adjust_active_order(self):
         for i in range(len(self.windows)):
             if self.windows[i].is_active():
@@ -77,7 +77,7 @@ class WindowSwitcher(object):
         self.free_id.add(old_id)
 
     def on_list(self):
-        candidates = list(self.windows)
+        candidates = filter(lambda w: not w.get_workspace() or w.get_workspace() == self.screen.get_active_workspace(), self.windows)
         if len(candidates) > 1:
             t = candidates[0]
             candidates[0] = candidates[1]
@@ -89,7 +89,7 @@ class WindowSwitcher(object):
                 icon = w.get_icon()
                 # sys.stderr.write('%s\n' % (w.get_class_instance_name()))
                 # sys.stderr.write('%s\n' % (w.is_active()))
-                sys.stderr.write('>>> %s id %d\n' % (w.get_name(), self.window_id_map[w]))
+                sys.stderr.write('>>> %s id %d %s\n' % (w.get_name(), self.window_id_map[w], w.get_workspace()))
                 # buf = icon.save_to_bufferv('png', [], [])[1]
                 buf = None
                 e = self.spec.find_by_wmclass(w.get_class_instance_name())

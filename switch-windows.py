@@ -54,7 +54,9 @@ class WindowSwitcher(object):
         if not prev_window:
             self.adjust_active_order()
             return
-        
+        if screen.get_active_workspace() != prev_window.get_workspace():
+            return
+
         sys.stderr.write('Prev %s\n' % prev_window.get_name())
         w = self.try_first_window(exclude=[prev_window])
         if w != None:

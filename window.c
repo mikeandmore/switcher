@@ -108,7 +108,10 @@ void window_queue_expose(struct window *w)
 
 void window_destroy(struct window *w)
 {
-  if (w->buffer) XFreePixmap(dpy, w->buffer);
+  if (w->buffer) {
+    XFreePixmap(dpy, w->buffer);
+    cairo_surface_destroy(w->surface);
+  }
   XDestroyWindow(dpy, w->da);
 }
 

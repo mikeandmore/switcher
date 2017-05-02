@@ -230,6 +230,7 @@ void switcher_clear(struct switcher *sw)
   for (struct switcher_item *item = sw->items;
        item != NULL; item = next) {
     next = item->next;
+    cairo_surface_destroy(item->image_surface);
     free(item);
   }
   sw->items = NULL;
@@ -426,6 +427,7 @@ static void icon_switcher_event_handler(struct window *w, XEvent *event, void *d
     icon_switcher_paint(sw, cr);
     window_submit_buffer(w, sw->w, sw->h);
     cairo_destroy(cr);
+
     break;
   case NoExpose:
     break;

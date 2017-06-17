@@ -18,7 +18,7 @@ class Launcher(object):
         items = []
         for app in self.apps:
             if app.icon_path:
-                sys.stderr.write('%s\n' % app.getName())
+                sys.stderr.write('%s\n' % app.getName().encode('utf-8'))
                 items.append(SwitcherItem(id=i, \
                                           name=app.getName().encode('utf-8'), \
                                           png_buf=file(app.icon_path).read()))
